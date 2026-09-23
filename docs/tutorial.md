@@ -5,6 +5,71 @@ type. Every command and output below was run with real npm packages
 (lodash, commander, chalk) on Node 24; long stack traces are shortened with
 `…`, and the sandbox path in output differs on every run.
 
+## Two-minute demo
+
+Build a tiny project, bump a dependency, and let ratchet judge the bump. You
+need Node 24, npm and git.
+
+```
+mkdir demo && cd demo
+npm init -y
+npm install commander@8.3.0 --save-exact
+npm pkg set scripts.test="node test.js"
+```
+
+Create three files. `cli.js`:
+
+```js
+const { program } = require("commander");
+
+program.option("-d, --debug", "enable debug output");
+program.parse(["node", "cli", "-d"]);
+
+module.exports = program.opts();
+```
+
+`test.js`:
+
+```js
+if (require("./cli").debug !== true) throw new Error("debug flag not parsed");
+console.log("ok");
+```
+
+and `.gitignore` containing the line `node_modules`. Commit the "before" state,
+then apply the bump:
+
+```
+git init -b main
+git add .
+git commit -m "before the bump"
+npm install commander@9.0.0 --save-exact
+```
+
+Now ask ratchet (this uses the published package, no install needed):
+
+```
+npx ratchet-verify . --base HEAD
+```
+
+Real output:
+
+```
+RISKY  commander 8.3.0 -> 9.0.0 (direct)
+  tests pass, but the changelog names 2 symbol uses in your code as breaking
+  - cli.js:3  program.option("-d, --debug", "enable debug output");
+    changelog 9.0.0 (high): - *Breaking:* default value specified for boolean option now always used as default value (see .preset() to match some previous behaviours) (#1652)
+  - cli.js:4  program.parse(["node", "cli", "-d"]);
+    changelog 9.0.0 (high): - *Breaking:* removed internal fallback to `require.main.filename` when script not known from arguments passed to `.parse()`
+  caveat: major version bump: breaking changes are allowed even if the changelog does not list them
+
+overall: risky
+```
+
+The tests you wrote pass, but the release notes list breaking changes that name
+`option` and `parse`, the two commander functions your code calls. The whole run
+took about ten seconds. Section 4 below explains this output; sections 3 and 5
+show the other verdicts.
+
 ## 1. Install
 
 ```
@@ -163,13 +228,16 @@ For the commander project `--markdown` prints:
 
 ## 7. In CI
 
-Use the GitHub Action from the [README](../README.md#github-action): it runs
-`--base` against the pull request's base commit, posts the Markdown above as
-one comment that it updates on every push, optionally uploads the SARIF, and
-fails the check when the overall verdict reaches `fail-on`. Check out with
-`fetch-depth: 0` so the base commit's lockfile is readable.
+Use the GitHub Action: it runs `--base` against the pull request's base commit,
+posts the Markdown above as one comment that it updates on every push,
+optionally uploads the SARIF, and fails the check when the overall verdict
+reaches `fail-on`. Setup, inputs, Dependabot/Renovate and other CI systems are
+in [ci.md](ci.md).
 
-## 8. Configuration
+## 8. Where next
 
-See [configuration.md](configuration.md) for `.ratchetrc`, and
-[verdicts.md](verdicts.md) for exactly what each verdict and caveat means.
+- [verdicts.md](verdicts.md): exactly what each verdict and caveat means
+- [ci.md](ci.md): the GitHub Action, Dependabot/Renovate, other CI systems
+- [configuration.md](configuration.md): `.ratchetrc`
+- [report-format.md](report-format.md): JSON, SARIF and Markdown reference
+- [troubleshooting.md](troubleshooting.md): error messages and surprising verdicts

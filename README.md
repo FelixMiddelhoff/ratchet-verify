@@ -69,9 +69,11 @@ ratchet-verify . --base main         # the short alias `ratchet` works too
 on `main`. Exit code `0` means ok, `1` means a verdict at or above
 `--fail-on` (default `broken`), `2` means a usage or runtime error.
 
-More: a [tutorial with real output](docs/tutorial.md), what every
-[verdict and caveat means](docs/verdicts.md), and the
-[configuration reference](docs/configuration.md).
+More in [docs/](docs/README.md): a [two-minute demo and tutorial](docs/tutorial.md)
+with real output, what every [verdict and caveat means](docs/verdicts.md),
+[CI recipes](docs/ci.md) (GitHub Action, Dependabot/Renovate, other systems),
+the [configuration reference](docs/configuration.md), the
+[report formats](docs/report-format.md) and [troubleshooting](docs/troubleshooting.md).
 
 ## How it works
 

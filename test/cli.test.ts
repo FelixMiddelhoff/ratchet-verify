@@ -130,3 +130,16 @@ test("unreadable base ref is a runtime error", async () => {
     assert.match(err[0]!, /git show/);
   });
 });
+
+test("missing lockfile: explains what is supported instead of ENOENT", async () => {
+  await withTempProject({ "package.json": pkg({}), "old.json": lock("1.0.0") }, async (dir) => {
+    const { io, err } = capture();
+    assert.equal(await runCli([dir, "--old", join(dir, "old.json")], io, fakeDeps("passed")), 2);
+    assert.match(err[0]!, /no lockfile at .*npm install/);
+  });
+  await withTempProject({ "package.json": pkg({}), "old.json": lock("1.0.0"), "yarn.lock": "" }, async (dir) => {
+    const { io, err } = capture();
+    assert.equal(await runCli([dir, "--old", join(dir, "old.json")], io, fakeDeps("passed")), 2);
+    assert.match(err[0]!, /found yarn\.lock, but only npm's package-lock\.json is supported/);
+  });
+});

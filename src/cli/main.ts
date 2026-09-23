@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -36,7 +36,7 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
     if (args.failOn) config.failOn = args.failOn;
 
     const oldLockfile = args.oldLockfile ? await readFile(args.oldLockfile, "utf8") : await readFileAtRef(projectDir, args.base!, LOCKFILE);
-    const newLockfile = await readFile(args.newLockfile ?? join(projectDir, LOCKFILE), "utf8");
+    const newLockfile = await readNewLockfile(args.newLockfile ?? join(projectDir, LOCKFILE), projectDir);
     const manifest = JSON.parse(await readFile(join(projectDir, "package.json"), "utf8"));
     const oldPackageJson = await readOldPackageJson(args, projectDir);
 
@@ -54,6 +54,18 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
 
 function defaultDeps(config: Awaited<ReturnType<typeof loadConfig>>, env: NodeJS.ProcessEnv): DepsFactory {
   return (options) => realDeps({ ...options, config, githubToken: env.GITHUB_TOKEN });
+}
+
+/** A missing lockfile is the most likely first-run error, so say what ratchet supports instead of ENOENT. */
+async function readNewLockfile(path: string, projectDir: string): Promise<string> {
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    const other = ["yarn.lock", "pnpm-lock.yaml"].find((file) => existsSync(join(projectDir, file)));
+    const hint = other ? `found ${other}, but only npm's package-lock.json is supported so far` : "run `npm install` to create one";
+    throw new Error(`no lockfile at ${path}: ${hint}`);
+  }
 }
 
 /** The manifest that belongs to the old lockfile; undefined means "same as the working tree's". */
