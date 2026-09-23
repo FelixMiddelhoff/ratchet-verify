@@ -28,6 +28,16 @@ Yarn and pnpm lockfiles aren't diffed yet
 Unknown keys are rejected so a typo can't silently weaken a check. See
 [configuration.md](configuration.md) for the option names.
 
+**`isolation "container" needs docker or podman, but no working engine was found (is the daemon running?). Use --isolation temp-dir to accept weaker isolation.`**
+Container isolation was requested but neither `docker info` nor `podman info`
+succeeded. Start the engine (Docker Desktop, `systemctl start docker`,
+`podman machine start`), or use `--isolation auto` to fall back with a warning.
+
+**`could not pull container image node:24 with docker: …`**
+The image is pulled up front. Check network access and registry login, or set
+`containerImage` in `.ratchetrc` to an image you can pull (it needs Node and
+npm).
+
 **`Unknown option '--bogus'. …`**
 Check `ratchet-verify --help`.
 
@@ -82,6 +92,10 @@ environment (the GitHub Action does this for you); ratchet then falls back to
 `testTimeoutMs` in `.ratchetrc` (default 600000). A hung suite counts as a
 failure, which is intentional: a dependency that hangs on import is a real
 break.
+
+**`ratchet: no container engine found: falling back to temp-dir isolation …`**
+Only a warning, printed with `--isolation auto` (or `"isolation": "auto"`). The
+report's last line then says `isolation: temp-dir`.
 
 ## Things that look wrong but aren't
 

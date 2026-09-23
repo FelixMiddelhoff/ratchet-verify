@@ -35,6 +35,7 @@ push, and fails the check according to `fail-on`.
 | `fail-on` | `broken` | `broken` or `risky` |
 | `comment` | `true` | Post and update the verdict comment |
 | `sarif` | `false` | Upload results to code scanning (needs `security-events: write`) |
+| `isolation` | `temp-dir` | `temp-dir`, `container` or `auto`. GitHub-hosted Ubuntu runners have docker, so `container` works out of the box (the image is pulled on the first run) |
 | `ratchet-version` | `latest` | Version or tag of `ratchet-verify` to run |
 | `node-version` | `24` | Node.js used to run ratchet and your tests |
 
@@ -93,8 +94,11 @@ commit (`--base HEAD~1`).
 
 ## Security notes for CI
 
-Installing a candidate version executes its install scripts. ratchet strips
-credentials from that environment and redirects the home directory, but it is
-temp-directory isolation, not a container: run it on ephemeral CI runners, not
-on a machine holding long-lived secrets. Details in the
-[README](../README.md#safety-of-the-install-step).
+Installing a candidate version executes its install scripts. By default ratchet
+strips credentials from that environment and redirects the home directory
+(`temp-dir` isolation), which does not stop a script from reading host files.
+In CI, prefer `isolation: container` (docker or podman, present on GitHub-hosted
+Ubuntu runners): the install and the tests then see only the sandbox directory.
+Either way, run on ephemeral runners rather than machines holding long-lived
+secrets. Details in the [README](../README.md#safety-of-the-install-step) and
+[configuration.md](configuration.md#isolation).
