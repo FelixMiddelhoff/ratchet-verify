@@ -59,8 +59,11 @@ runs:
       run: |
         report_dir="${RUNNER_TEMP}/ratchet-report"
         set +e
+        # Older ratchet-verify versions don't know --isolation, so it is only passed when asked for.
+        extra=()
+        if [ "${RATCHET_ISOLATION}" != "temp-dir" ]; then extra=(--isolation "${RATCHET_ISOLATION}"); fi
         npx --yes "ratchet-verify@${RATCHET_VERSION}" "${RATCHET_DIR}" \
-          --base "${RATCHET_BASE}" --fail-on "${RATCHET_FAIL_ON}" --isolation "${RATCHET_ISOLATION}" --report-dir "${report_dir}"
+          --base "${RATCHET_BASE}" --fail-on "${RATCHET_FAIL_ON}" --report-dir "${report_dir}" "${extra[@]}"
         code=$?
         set -e
         echo "exit-code=${code}" >> "$GITHUB_OUTPUT"
