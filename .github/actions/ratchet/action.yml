@@ -1,4 +1,4 @@
-name: ratchet
+name: ratchet-verify
 description: Verify a dependency bump before you merge it - runs your tests, checks changelog breaking changes against your code, and bisects failures.
 branding:
   icon: check-circle
@@ -21,7 +21,7 @@ inputs:
     description: Upload results to GitHub code scanning (needs security-events "write").
     default: "false"
   ratchet-version:
-    description: npm version or tag of ratchet to run.
+    description: npm version or tag of ratchet-verify to run.
     default: latest
   node-version:
     description: Node.js version used to run ratchet and your tests.
@@ -55,7 +55,7 @@ runs:
       run: |
         report_dir="${RUNNER_TEMP}/ratchet-report"
         set +e
-        npx --yes "ratchet@${RATCHET_VERSION}" "${RATCHET_DIR}" \
+        npx --yes "ratchet-verify@${RATCHET_VERSION}" "${RATCHET_DIR}" \
           --base "${RATCHET_BASE}" --fail-on "${RATCHET_FAIL_ON}" --report-dir "${report_dir}"
         code=$?
         set -e

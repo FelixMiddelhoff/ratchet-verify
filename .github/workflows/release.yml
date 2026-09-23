@@ -1,0 +1,33 @@
+name: release
+# Publishes to npm on a version tag (v0.1.0, ...). No long-lived npm token: npm trusted
+# publishing exchanges this workflow's GitHub OIDC identity for a short-lived publish
+# credential, and the tarball is published with provenance. One-time setup on npmjs.com:
+# package settings -> Trusted Publisher -> this repository and workflow file (release.yml).
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+  id-token: write   # OIDC token for trusted publishing and provenance
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm run lint
+      # Gate: the full suite must pass before anything is published.
+      - run: npm test
+      - name: Tag must match package.json version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version ${version}"
+            exit 1
+          fi
+      - run: npm run build
+      - run: npm publish --provenance --access public
