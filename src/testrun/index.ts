@@ -35,6 +35,10 @@ export async function detectTestScript(dir: string): Promise<string | undefined>
 export type TestOutcome =
   | { status: "passed" | "failed" | "timed-out"; result: RunResult }
   | { status: "install-failed"; result: RunResult }
+  /** The suite already fails on the old lockfile, so a failure on the new one proves nothing about the bump. */
+  | { status: "baseline-failing"; result: RunResult }
+  /** The suite fails, but other dependencies reproduce it on their own; this one was not tested alone. */
+  | { status: "blamed-elsewhere"; culprits: string[] }
   | { status: "no-test-script" | "no-lockfile" };
 
 export interface TestRunOptions {

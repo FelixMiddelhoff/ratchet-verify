@@ -24,6 +24,8 @@ export interface ChangelogResult {
   entries: ChangelogEntry[];
   /** In-range versions for which no notes were found anywhere. */
   missingVersions: string[];
+  /** Every version the registry lists; the Bisector searches within it. */
+  availableVersions: string[];
   repo?: GitHubRepo;
   notes: string[];
 }
@@ -41,13 +43,14 @@ const RELEASE_PAGES = 3;
 
 export async function fetchChangelog(request: ChangelogRequest): Promise<ChangelogResult> {
   const http = request.fetch ?? (globalThis.fetch as FetchLike);
-  const result: ChangelogResult = { source: "none", entries: [], missingVersions: [], notes: [] };
+  const result: ChangelogResult = { source: "none", entries: [], missingVersions: [], availableVersions: [], notes: [] };
 
   const packument = await getJson(http, registryUrl(request.name), {}, result.notes, "npm registry");
   if (!packument) return result;
   const p = packument as { repository?: Parameters<typeof normalizeRepository>[0]; versions?: Record<string, unknown> };
 
-  const wanted = versionsInRange(Object.keys(p.versions ?? {}), request.oldVersion, request.newVersion);
+  result.availableVersions = Object.keys(p.versions ?? {});
+  const wanted = versionsInRange(result.availableVersions, request.oldVersion, request.newVersion);
   result.repo = normalizeRepository(p.repository);
   result.missingVersions = wanted;
   if (!result.repo) {

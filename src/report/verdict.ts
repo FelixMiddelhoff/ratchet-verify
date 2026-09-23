@@ -41,7 +41,12 @@ export function judge(a: DependencyAssessment): DependencyVerdict {
   };
 
   const test = a.test;
-  if (test.status === "no-test-script" || test.status === "no-lockfile") return unverified(base, test.status);
+  if (test.status === "blamed-elsewhere") {
+    return unverified(base, `the suite fails because of ${test.culprits.join(", ")}; this dependency was not tested on its own`);
+  }
+  if (test.status === "no-test-script" || test.status === "no-lockfile" || test.status === "baseline-failing") {
+    return unverified(base, UNVERIFIED_REASON[test.status]);
+  }
   if (test.status !== "passed" && "result" in test) return broken(base, a, test);
 
   const evidence = callSiteEvidence(a.match);
@@ -69,11 +74,13 @@ export function judge(a: DependencyAssessment): DependencyVerdict {
   };
 }
 
-function unverified(base: PartialBase, reason: "no-test-script" | "no-lockfile"): DependencyVerdict {
-  const text =
-    reason === "no-test-script"
-      ? "package.json has no scripts.test, so nothing ran against this bump"
-      : "no lockfile found for the sandbox install, so nothing ran against this bump";
+const UNVERIFIED_REASON = {
+  "no-test-script": "package.json has no scripts.test, so nothing ran against this bump",
+  "no-lockfile": "no lockfile found for the sandbox install, so nothing ran against this bump",
+  "baseline-failing": "the test suite already fails on the old lockfile, so this bump cannot be verified",
+};
+
+function unverified(base: PartialBase, text: string): DependencyVerdict {
   return {
     ...base,
     status: "risky",

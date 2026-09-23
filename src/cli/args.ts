@@ -1,0 +1,64 @@
+import { parseArgs } from "node:util";
+
+export type OutputFormat = "text" | "json" | "sarif";
+
+export interface CliArgs {
+  projectDir: string;
+  /** Git ref whose package-lock.json is the "before" state. */
+  base?: string;
+  oldLockfile?: string;
+  newLockfile?: string;
+  format: OutputFormat;
+  failOn?: "broken" | "risky";
+  help: boolean;
+}
+
+export const USAGE = `ratchet: verify a dependency bump before you merge it
+
+Usage: ratchet [project-dir] (--base <git-ref> | --old <lockfile>) [options]
+
+  --base <ref>        compare against package-lock.json at this git ref (e.g. origin/main)
+  --old <file>        compare against this lockfile instead of a git ref
+  --new <file>        lockfile with the proposed bump (default: <project-dir>/package-lock.json)
+  --json              machine-readable output
+  --sarif             SARIF 2.1.0 output for code scanning
+  --fail-on <level>   exit 1 when the overall verdict is "broken" (default) or "risky"
+  -h, --help          show this help
+
+Exit codes: 0 ok, 1 verdict at or above --fail-on, 2 usage or runtime error.
+Options can also be set in .ratchetrc (JSON) in the project directory.`;
+
+export function parseCliArgs(argv: string[]): CliArgs {
+  const { values, positionals } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: {
+      base: { type: "string" },
+      old: { type: "string" },
+      new: { type: "string" },
+      json: { type: "boolean" },
+      sarif: { type: "boolean" },
+      "fail-on": { type: "string" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (positionals.length > 1) throw new Error(`expected at most one project directory, got ${positionals.length}`);
+  if (values.json && values.sarif) throw new Error("--json and --sarif are mutually exclusive");
+  if (values.base && values.old) throw new Error("--base and --old are mutually exclusive");
+
+  const failOn = values["fail-on"];
+  if (failOn !== undefined && failOn !== "broken" && failOn !== "risky") {
+    throw new Error(`--fail-on must be "broken" or "risky", got "${failOn}"`);
+  }
+
+  return {
+    projectDir: positionals[0] ?? ".",
+    base: values.base,
+    oldLockfile: values.old,
+    newLockfile: values.new,
+    format: values.json ? "json" : values.sarif ? "sarif" : "text",
+    failOn,
+    help: values.help ?? false,
+  };
+}

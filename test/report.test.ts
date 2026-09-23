@@ -24,7 +24,7 @@ function assessment(overrides: Partial<DependencyAssessment> = {}): DependencyAs
     change: { name: "lib", path: "node_modules/lib", kind: "changed", oldVersion: "1.0.0", newVersion: "1.5.0", direct: true },
     test: passed,
     usage: { sites: [{ file: "src/a.js", line: 1, symbol: "foo", kind: "import", snippet: "x" }], unparsed: [] },
-    changelog: { source: "github-releases", entries: [], missingVersions: [], notes: [] },
+    changelog: { source: "github-releases", entries: [], missingVersions: [], availableVersions: [], notes: [] },
     match: { hits: [], majorBoundary: false, hasBreakingSections: false },
     ...overrides,
   };
@@ -36,7 +36,7 @@ test("safe with every signal evaluated: full confidence, no caveats", () => {
 });
 
 test("safe but no changelog: downgraded to a tests-only verdict", () => {
-  const v = judge(assessment({ changelog: { source: "none", entries: [], missingVersions: ["1.5.0"], notes: [] } }));
+  const v = judge(assessment({ changelog: { source: "none", entries: [], missingVersions: ["1.5.0"], availableVersions: [], notes: [] } }));
   assert.equal(v.status, "safe");
   assert.equal(v.confidence, "reduced");
   assert.ok(v.caveats.some((c) => c.includes("tests-only")));
@@ -44,7 +44,7 @@ test("safe but no changelog: downgraded to a tests-only verdict", () => {
 });
 
 test("safe but changelog missing some versions: caveat names them", () => {
-  const v = judge(assessment({ changelog: { source: "github-releases", entries: [], missingVersions: ["1.2.0"], notes: [] } }));
+  const v = judge(assessment({ changelog: { source: "github-releases", entries: [], missingVersions: ["1.2.0"], availableVersions: [], notes: [] } }));
   assert.equal(v.confidence, "reduced");
   assert.ok(v.caveats.some((c) => c.includes("1.2.0")));
 });
@@ -133,7 +133,7 @@ test("added dependency: no changelog caveat, no-usage note is not a caveat", () 
   const v = judge(
     assessment({
       change: { name: "lib", path: "node_modules/lib", kind: "added", newVersion: "1.0.0", direct: true },
-      changelog: { source: "none", entries: [], missingVersions: [], notes: [] },
+      changelog: { source: "none", entries: [], missingVersions: [], availableVersions: [], notes: [] },
       usage: { sites: [], unparsed: [] },
     }),
   );
@@ -159,7 +159,7 @@ test("text output shows label, call site, excerpt and caveats", () => {
   const text = renderText(
     buildReport([
       assessment({ match: { hits: [hit("high")], majorBoundary: true, hasBreakingSections: true } }),
-      assessment({ changelog: { source: "none", entries: [], missingVersions: [], notes: [] } }),
+      assessment({ changelog: { source: "none", entries: [], missingVersions: [], availableVersions: [], notes: [] } }),
     ]),
   );
   assert.match(text, /RISKY {2}lib 1\.0\.0 -> 1\.5\.0 \(direct\)/);
