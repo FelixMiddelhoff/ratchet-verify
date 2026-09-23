@@ -14,6 +14,8 @@ All notable changes to this project are documented here, in
 - Bisection of a failing version range.
 - safe / risky / broken verdicts with evidence; text, JSON, SARIF and Markdown output.
 - Command line interface, `.ratchetrc`, and a GitHub Action with a pull request comment.
+- `--version` flag.
+- Issue template for wrong or surprising verdicts, and CONTRIBUTING.md.
 - Documentation: two-minute demo, CI guide, report-format reference, troubleshooting.
 
 ### Changed

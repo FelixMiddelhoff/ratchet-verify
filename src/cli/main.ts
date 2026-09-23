@@ -10,6 +10,7 @@ import { realDeps } from "../pipeline/real.js";
 import { renderJson, renderSarif, renderText, type Report } from "../report/index.js";
 import { parseCliArgs, USAGE, type OutputFormat } from "./args.js";
 import { readFileAtRef } from "./git.js";
+import { packageVersion } from "./version.js";
 
 const LOCKFILE = "package-lock.json";
 
@@ -27,6 +28,10 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
     const args = parseCliArgs(argv);
     if (args.help) {
       io.out(USAGE);
+      return 0;
+    }
+    if (args.version) {
+      io.out(packageVersion());
       return 0;
     }
     if (!args.base && !args.oldLockfile) throw new Error("need --base <git-ref> or --old <lockfile> (see --help)");

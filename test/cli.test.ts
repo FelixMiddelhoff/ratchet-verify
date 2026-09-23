@@ -29,7 +29,7 @@ const files = { "package.json": pkg({ dependencies: { lib: "^1" } }), "package-l
 
 test("args: defaults, flags and validation", () => {
   assert.deepEqual(parseCliArgs(["--base", "main"]), {
-    projectDir: ".", base: "main", oldLockfile: undefined, oldPackageJson: undefined, newLockfile: undefined, format: "text", failOn: undefined, reportDir: undefined, help: false,
+    projectDir: ".", base: "main", oldLockfile: undefined, oldPackageJson: undefined, newLockfile: undefined, format: "text", failOn: undefined, reportDir: undefined, help: false, version: false,
   });
   assert.equal(parseCliArgs(["proj", "--old", "o.json", "--json"]).format, "json");
   assert.equal(parseCliArgs(["--sarif", "--old", "o"]).format, "sarif");
@@ -142,4 +142,10 @@ test("missing lockfile: explains what is supported instead of ENOENT", async () 
     assert.equal(await runCli([dir, "--old", join(dir, "old.json")], io, fakeDeps("passed")), 2);
     assert.match(err[0]!, /found yarn\.lock, but only npm's package-lock\.json is supported/);
   });
+});
+
+test("--version prints the package version", async () => {
+  const { io, out } = capture();
+  assert.equal(await runCli(["--version"], io), 0);
+  assert.match(out[0]!, /^\d+\.\d+\.\d+/);
 });

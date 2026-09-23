@@ -15,6 +15,7 @@ export interface CliArgs {
   /** Also write report.json, report.md and report.sarif here, whatever the stdout format. */
   reportDir?: string;
   help: boolean;
+  version: boolean;
 }
 
 export const USAGE = `ratchet: verify a dependency bump before you merge it
@@ -30,6 +31,7 @@ Usage: ratchet [project-dir] (--base <git-ref> | --old <lockfile>) [options]
   --markdown          Markdown output, as posted in pull request comments
   --report-dir <dir>  also write report.json, report.md and report.sarif into <dir>
   --fail-on <level>   exit 1 when the overall verdict is "broken" (default) or "risky"
+  -v, --version       print the version
   -h, --help          show this help
 
 Exit codes: 0 ok, 1 verdict at or above --fail-on, 2 usage or runtime error.
@@ -50,6 +52,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
       "report-dir": { type: "string" },
       "fail-on": { type: "string" },
       help: { type: "boolean", short: "h" },
+      version: { type: "boolean", short: "v" },
     },
   });
 
@@ -74,5 +77,6 @@ export function parseCliArgs(argv: string[]): CliArgs {
     failOn,
     reportDir: values["report-dir"],
     help: values.help ?? false,
+    version: values.version ?? false,
   };
 }

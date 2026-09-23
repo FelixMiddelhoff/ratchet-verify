@@ -133,6 +133,7 @@ ratchet-verify [project-dir] (--base <git-ref> | --old <lockfile>) [options]
   --json | --sarif | --markdown   output format (default: text)
   --report-dir <dir>  also write report.json, report.md and report.sarif
   --fail-on <level>   exit 1 on "broken" (default) or "risky"
+  -v, --version       print the version
 ```
 
 Project options (`ignore`, `maxInstalls`, `testTimeoutMs`, `failOn`) live in
@@ -220,9 +221,12 @@ bump.
 ## Help wanted
 
 ratchet is young, and there is a lot of well-defined work where an outside
-contribution makes a real difference. Everything below is open. Comment on (or
-open) an issue before starting anything big so we don't duplicate effort;
-small fixes can go straight to a pull request.
+contribution makes a real difference. Everything below is open, and most items
+already have an issue with context and a "done when" checklist: browse the
+[`help wanted`](https://github.com/FelixMiddelhoff/ratchet-verify/labels/help%20wanted)
+and [`good first issue`](https://github.com/FelixMiddelhoff/ratchet-verify/labels/good%20first%20issue)
+labels. Comment on (or open) an issue before starting anything big so we don't
+duplicate effort; small fixes can go straight to a pull request.
 
 ### High impact
 
@@ -272,9 +276,10 @@ small fixes can go straight to a pull request.
 - **Try it on your own project and report what happens.** A false "safe", a
   false "broken", a confusing message, a crash: each is a valuable issue. Include
   the ratchet output, the bump, and (if you can) the relevant changelog lines.
-- **Test on Linux and macOS.** CI runs Ubuntu only, and development happens on
-  Windows. Path handling, process-tree killing on timeout, and shell quoting
-  are the likely trouble spots (`src/sandbox/exec.ts`).
+- **Test on more platforms.** CI runs on Ubuntu and development happens on
+  Windows; macOS and Windows aren't in the CI matrix yet. Path handling,
+  process-tree killing on timeout and shell quoting are the likely trouble
+  spots (`src/sandbox/exec.ts`).
 - **Documentation.** Tutorial improvements, a walkthrough for your CI system,
   translations, or a fix for anything that read confusingly. Rule of thumb:
   every command and output shown must have actually been run.
