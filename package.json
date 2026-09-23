@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "Verify a dependency bump before you merge it: real tests, changelog breaking changes vs. actual usage, bisection to the breaking version.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FelixMiddelhoff/ratchet-verify.git"
+  },
+  "homepage": "https://github.com/FelixMiddelhoff/ratchet-verify#readme",
+  "bugs": {
+    "url": "https://github.com/FelixMiddelhoff/ratchet-verify/issues"
+  },
   "type": "module",
   "bin": {
     "ratchet-verify": "dist/cli/main.js",
