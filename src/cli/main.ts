@@ -7,6 +7,7 @@ import { renderMarkdown } from "../ci/comment.js";
 import { loadConfig } from "../config.js";
 import { runPipeline, type PipelineDeps } from "../pipeline/index.js";
 import { realDeps } from "../pipeline/real.js";
+import { resolveIsolation, type ResolvedIsolation } from "../sandbox/index.js";
 import { renderJson, renderSarif, renderText, type Report } from "../report/index.js";
 import { parseCliArgs, USAGE, type OutputFormat } from "./args.js";
 import { readFileAtRef } from "./git.js";
@@ -20,7 +21,14 @@ export interface CliIo {
   env: NodeJS.ProcessEnv;
 }
 
-export type DepsFactory = (options: { projectDir: string; oldLockfile: string; oldPackageJson?: string }) => PipelineDeps;
+export interface DepsFactoryOptions {
+  projectDir: string;
+  oldLockfile: string;
+  oldPackageJson?: string;
+  isolation: ResolvedIsolation;
+}
+
+export type DepsFactory = (options: DepsFactoryOptions) => PipelineDeps;
 
 /** Returns the process exit code: 0 ok, 1 verdict at/above failOn, 2 usage or runtime error. */
 export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory): Promise<number> {
@@ -39,13 +47,17 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
     const projectDir = resolve(args.projectDir);
     const config = await loadConfig(projectDir);
     if (args.failOn) config.failOn = args.failOn;
+    if (args.isolation) config.isolation = args.isolation;
 
     const oldLockfile = args.oldLockfile ? await readFile(args.oldLockfile, "utf8") : await readFileAtRef(projectDir, args.base!, LOCKFILE);
     const newLockfile = await readNewLockfile(args.newLockfile ?? join(projectDir, LOCKFILE), projectDir);
     const manifest = JSON.parse(await readFile(join(projectDir, "package.json"), "utf8"));
     const oldPackageJson = await readOldPackageJson(args, projectDir);
 
-    const deps = (makeDeps ?? defaultDeps(config, io.env))({ projectDir, oldLockfile, oldPackageJson });
+    const isolation = await resolveIsolation({ mode: config.isolation, runtime: config.containerRuntime, image: config.containerImage });
+    for (const note of isolation.notes) io.err(`ratchet: ${note}`);
+
+    const deps = (makeDeps ?? defaultDeps(config, io.env))({ projectDir, oldLockfile, oldPackageJson, isolation });
     const report = await runPipeline({ oldLockfile, newLockfile, manifest, oldPackageJson, config }, deps);
 
     io.out(render(report, args.format));

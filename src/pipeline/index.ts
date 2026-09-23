@@ -4,6 +4,7 @@ import type { Config } from "../config.js";
 import { diffLockfileTexts, type DependencyChange, type RootManifest } from "../lockfile/index.js";
 import { matchBreakingChanges } from "../match/index.js";
 import { buildReport, type DependencyAssessment, type Report } from "../report/index.js";
+import type { IsolationInfo } from "../sandbox/index.js";
 import type { TestOutcome } from "../testrun/index.js";
 import type { UsageScan } from "../usage/index.js";
 
@@ -24,6 +25,8 @@ export interface PipelineDeps {
   testDependencyAt(name: string, version: string): Promise<TestOutcome>;
   fetchChangelog(request: ChangelogRequest): Promise<ChangelogResult>;
   scanUsage(packageName: string): Promise<UsageScan>;
+  /** What isolated the installs and tests; shown in every report. */
+  isolation?: IsolationInfo;
 }
 
 const EMPTY_CHANGELOG: ChangelogResult = { source: "none", entries: [], missingVersions: [], availableVersions: [], notes: [] };
@@ -40,7 +43,7 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
   const changes = diffLockfileTexts(input.oldLockfile, input.newLockfile, input.manifest).filter(
     (c) => !input.config.ignore.includes(c.name),
   );
-  if (changes.length === 0) return buildReport([]);
+  if (changes.length === 0) return buildReport([], deps.isolation);
 
   const overall = await deps.testLockfile(input.newLockfile);
   const signals = await Promise.all(changes.map((change) => gatherSignals(change, deps)));
@@ -50,6 +53,7 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
 
   return buildReport(
     signals.map((s) => ({ ...s, ...outcomes.get(s.change.path)! }) satisfies DependencyAssessment),
+    deps.isolation,
   );
 }
 

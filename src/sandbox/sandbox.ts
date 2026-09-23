@@ -1,15 +1,23 @@
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { runInContainer, type ContainerSettings } from "./container.js";
 import { buildSandboxEnv, sandboxPaths } from "./env.js";
 import { runCommand, type RunResult } from "./exec.js";
 
 /**
  * "temp-dir" hides credentials via a scrubbed environment and redirected home, but it does
- * not stop an install script from reading absolute paths on the host. A container/VM mode
- * is the stronger level; callers should surface this level in reports.
+ * not stop an install script from reading absolute paths on the host. "container" runs every
+ * install and test inside a container that can only see the sandbox directory.
  */
-export type IsolationLevel = "temp-dir";
+export type IsolationLevel = "temp-dir" | "container";
+
+/** What ran the installs: reported with every verdict so the strength of the isolation is never implicit. */
+export interface IsolationInfo {
+  level: IsolationLevel;
+  runtime?: string;
+  image?: string;
+}
 
 export interface Sandbox {
   readonly dir: string;
@@ -25,6 +33,8 @@ export interface SandboxOptions {
   packageJson?: string;
   /** Environment to filter; defaults to the real one. Exposed for tests. */
   sourceEnv?: NodeJS.ProcessEnv;
+  /** Run installs and tests in a container instead of directly on the host. */
+  container?: ContainerSettings;
 }
 
 const NOT_COPIED = new Set(["node_modules", ".git"]);
@@ -41,13 +51,17 @@ export async function withSandbox<T>(options: SandboxOptions, work: (sandbox: Sa
     if (options.packageJson !== undefined) await writeFile(join(dir, "package.json"), options.packageJson);
     if (options.lockfile) await writeFile(join(dir, options.lockfile.name), options.lockfile.content);
 
-    const env = buildSandboxEnv(paths, options.sourceEnv);
-    return await work({
-      dir,
-      isolation: "temp-dir",
-      run: (command, args, timeoutMs) => runCommand({ command, args, cwd: dir, env, timeoutMs }),
-    });
+    return await work(options.container ? containerSandbox(dir, root, options.container) : hostSandbox(dir, paths, options));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+}
+
+function hostSandbox(dir: string, paths: ReturnType<typeof sandboxPaths>, options: SandboxOptions): Sandbox {
+  const env = buildSandboxEnv(paths, options.sourceEnv);
+  return { dir, isolation: "temp-dir", run: (command, args, timeoutMs) => runCommand({ command, args, cwd: dir, env, timeoutMs }) };
+}
+
+function containerSandbox(dir: string, root: string, settings: ContainerSettings): Sandbox {
+  return { dir, isolation: "container", run: (command, args, timeoutMs) => runInContainer(settings, root, command, args, timeoutMs) };
 }

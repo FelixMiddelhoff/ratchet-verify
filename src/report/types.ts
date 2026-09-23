@@ -1,3 +1,5 @@
+import type { IsolationInfo } from "../sandbox/index.js";
+
 export type VerdictStatus = "safe" | "risky" | "broken";
 
 /** "reduced": at least one signal could not be evaluated, so the verdict rests on less than the full pipeline. */
@@ -46,5 +48,7 @@ export interface DependencyVerdict {
 export interface Report {
   schemaVersion: 1;
   overall: VerdictStatus;
+  /** How the installs and tests were isolated; absent when nothing was run. */
+  isolation?: IsolationInfo;
   verdicts: DependencyVerdict[];
 }

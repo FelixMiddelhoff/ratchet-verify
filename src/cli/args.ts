@@ -12,6 +12,7 @@ export interface CliArgs {
   newLockfile?: string;
   format: OutputFormat;
   failOn?: "broken" | "risky";
+  isolation?: "temp-dir" | "container" | "auto";
   /** Also write report.json, report.md and report.sarif here, whatever the stdout format. */
   reportDir?: string;
   help: boolean;
@@ -30,6 +31,7 @@ Usage: ratchet [project-dir] (--base <git-ref> | --old <lockfile>) [options]
   --sarif             SARIF 2.1.0 output for code scanning
   --markdown          Markdown output, as posted in pull request comments
   --report-dir <dir>  also write report.json, report.md and report.sarif into <dir>
+  --isolation <mode>  temp-dir (default), container (docker/podman) or auto
   --fail-on <level>   exit 1 when the overall verdict is "broken" (default) or "risky"
   -v, --version       print the version
   -h, --help          show this help
@@ -51,6 +53,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
       markdown: { type: "boolean" },
       "report-dir": { type: "string" },
       "fail-on": { type: "string" },
+      isolation: { type: "string" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
     },
@@ -67,6 +70,11 @@ export function parseCliArgs(argv: string[]): CliArgs {
     throw new Error(`--fail-on must be "broken" or "risky", got "${failOn}"`);
   }
 
+  const isolation = values.isolation;
+  if (isolation !== undefined && isolation !== "temp-dir" && isolation !== "container" && isolation !== "auto") {
+    throw new Error(`--isolation must be "temp-dir", "container" or "auto", got "${isolation}"`);
+  }
+
   return {
     projectDir: positionals[0] ?? ".",
     base: values.base,
@@ -75,6 +83,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
     newLockfile: values.new,
     format: values.json ? "json" : values.sarif ? "sarif" : values.markdown ? "markdown" : "text",
     failOn,
+    isolation,
     reportDir: values["report-dir"],
     help: values.help ?? false,
     version: values.version ?? false,

@@ -29,7 +29,7 @@ const files = { "package.json": pkg({ dependencies: { lib: "^1" } }), "package-l
 
 test("args: defaults, flags and validation", () => {
   assert.deepEqual(parseCliArgs(["--base", "main"]), {
-    projectDir: ".", base: "main", oldLockfile: undefined, oldPackageJson: undefined, newLockfile: undefined, format: "text", failOn: undefined, reportDir: undefined, help: false, version: false,
+    projectDir: ".", base: "main", oldLockfile: undefined, oldPackageJson: undefined, newLockfile: undefined, format: "text", failOn: undefined, isolation: undefined, reportDir: undefined, help: false, version: false,
   });
   assert.equal(parseCliArgs(["proj", "--old", "o.json", "--json"]).format, "json");
   assert.equal(parseCliArgs(["--sarif", "--old", "o"]).format, "sarif");
@@ -82,7 +82,7 @@ test("failing bump: exit 1; --json output parses", async () => {
 test("--fail-on risky turns a risky verdict into exit 1, default does not", async () => {
   await withTempProject({ ...files, "package.json": pkg({ dependencies: { lib: "^1" } }) }, async (dir) => {
     // A project with no test script yields the "unverified" (risky) verdict.
-    const noTests: DepsFactory = () => ({ ...fakeDeps("passed")({ projectDir: dir, oldLockfile: "" }), testLockfile: async () => ({ status: "no-test-script" as const }) });
+    const noTests: DepsFactory = () => ({ ...fakeDeps("passed")({ projectDir: dir, oldLockfile: "", isolation: { info: { level: "temp-dir" }, notes: [] } }), testLockfile: async () => ({ status: "no-test-script" as const }) });
     const base = [dir, "--old", join(dir, "old-lock.json")];
     assert.equal(await runCli(base, capture().io, noTests), 0);
     assert.equal(await runCli([...base, "--fail-on", "risky"], capture().io, noTests), 1);
