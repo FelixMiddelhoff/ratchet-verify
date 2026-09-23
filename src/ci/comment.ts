@@ -1,4 +1,4 @@
-import { groupVerdicts } from "../report/group.js";
+import { groupVerdicts, overallLabel } from "../report/group.js";
 import type { DependencyVerdict, Evidence, Report } from "../report/index.js";
 
 /** Lets the action find and update its own comment instead of posting a new one per push. */
@@ -9,7 +9,7 @@ const MAX_COMMENT_CHARS = 60_000;
 const ICON = { safe: "✅", risky: "⚠️", broken: "❌" } as const;
 
 export function renderMarkdown(report: Report): string {
-  const lines = [COMMENT_MARKER, `## ratchet: ${ICON[report.overall]} ${report.overall}`, ""];
+  const lines = [COMMENT_MARKER, `## ratchet: ${ICON[report.overall]} ${overallLabel(report)}`, ""];
 
   if (report.verdicts.length === 0) {
     lines.push("No dependency changes to verify.");

@@ -1,4 +1,10 @@
-import type { DependencyVerdict } from "./types.js";
+import type { DependencyVerdict, Report } from "./types.js";
+
+/** A bare "safe" headline must never hide a partial verdict underneath (quality policy rule 1). */
+export function overallLabel(report: Report): string {
+  const partial = report.overall === "safe" && report.verdicts.some((v) => v.confidence === "reduced");
+  return partial ? "safe (partial)" : report.overall;
+}
 
 export type VerdictGroup = { members: DependencyVerdict[] };
 

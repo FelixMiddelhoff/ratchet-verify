@@ -200,3 +200,11 @@ test("shared 'not tested on its own' verdicts collapse into one block in text an
   assert.match(renderMarkdown(report), /3 transitive dependencies/);
   assert.equal(JSON.parse(renderJson(report)).verdicts.length, 3);
 });
+
+test("headline says 'safe (partial)' when any safe verdict is partial", async () => {
+  const { renderMarkdown } = await import("../src/ci/comment.js");
+  const partial = buildReport([assessment({ changelog: { source: "none", entries: [], missingVersions: [], availableVersions: [], notes: [] } })]);
+  assert.match(renderText(partial), /overall: safe \(partial\)/);
+  assert.match(renderMarkdown(partial), /## ratchet: ✅ safe \(partial\)/);
+  assert.match(renderText(buildReport([assessment()])), /overall: safe$/);
+});

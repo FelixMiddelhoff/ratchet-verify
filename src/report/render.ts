@@ -1,4 +1,4 @@
-import { groupVerdicts, type VerdictGroup } from "./group.js";
+import { groupVerdicts, overallLabel, type VerdictGroup } from "./group.js";
 import type { DependencyVerdict, Evidence, Report } from "./types.js";
 
 export function renderJson(report: Report): string {
@@ -7,7 +7,7 @@ export function renderJson(report: Report): string {
 
 export function renderText(report: Report): string {
   const blocks = groupVerdicts(report.verdicts).map((g) => (g.members.length > 1 ? renderGroup(g) : renderVerdict(g.members[0]!)));
-  return [...blocks, `overall: ${report.overall}`].join("\n\n");
+  return [...blocks, `overall: ${overallLabel(report)}`].join("\n\n");
 }
 
 function renderGroup(group: VerdictGroup): string {
