@@ -1,0 +1,19 @@
+name: ratchet
+# Dogfooding: judge this repository's own dependency updates with ratchet.
+on:
+  pull_request:
+    paths: ["package.json", "package-lock.json"]
+
+permissions:
+  contents: read
+  pull-requests: write   # the verdict comment
+
+jobs:
+  ratchet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: ./.github/actions/ratchet
+        with:
+          fail-on: broken

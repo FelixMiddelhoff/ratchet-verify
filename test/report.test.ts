@@ -208,3 +208,11 @@ test("headline says 'safe (partial)' when any safe verdict is partial", async ()
   assert.match(renderMarkdown(partial), /## ratchet: ✅ safe \(partial\)/);
   assert.match(renderText(buildReport([assessment()])), /overall: safe$/);
 });
+
+test("a long group of transitive names is shortened in text output", () => {
+  const shared = (name: string) =>
+    judge(assessment({ change: { name, path: `node_modules/${name}`, kind: "changed", oldVersion: "1.0.0", newVersion: "1.1.0", direct: false }, test: { status: "blamed-elsewhere", culprits: ["a"] } }));
+  const names = Array.from({ length: 20 }, (_, i) => `t${i}`);
+  const text = renderText({ schemaVersion: 1, overall: "risky", verdicts: names.map(shared) });
+  assert.match(text, /20 transitive dependencies \(t0, t1, t2, t3, t4, t5 and 14 more\)/);
+});
