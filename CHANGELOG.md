@@ -5,6 +5,8 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-23
+
 ### Added
 - Lockfile diff for `package-lock.json` versions 1, 2 and 3.
 - Sandboxed install and test run with a scrubbed environment.
@@ -21,3 +23,5 @@ All notable changes to this project are documented here, in
 ### Changed
 - A missing `package-lock.json` now says what ratchet supports (and mentions a
   found `yarn.lock` / `pnpm-lock.yaml`) instead of a bare `ENOENT`.
+
+[0.1.1]: https://github.com/FelixMiddelhoff/ratchet-verify/releases/tag/v0.1.1
