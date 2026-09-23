@@ -35,16 +35,30 @@
     "@types/node": "^24.0.0"
   },
   "keywords": [
-    "dependencies",
     "npm",
-    "lockfile",
+    "nodejs",
+    "javascript",
+    "typescript",
+    "cli",
+    "dependency-management",
+    "dependencies",
+    "devtools",
+    "developer-tools",
+    "static-analysis",
+    "ci-cd",
+    "github-actions",
+    "continuous-integration",
+    "semver",
+    "package-management",
+    "testing",
+    "automation",
+    "code-quality",
+    "supply-chain-security",
+    "bisect",
     "changelog",
     "breaking-changes",
-    "bisect",
-    "upgrade",
-    "supply-chain-security",
-    "ci",
-    "semver"
+    "lockfile",
+    "upgrade"
   ],
   "publishConfig": {
     "access": "public"
