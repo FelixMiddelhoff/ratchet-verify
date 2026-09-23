@@ -8,13 +8,13 @@ type. Every command and output below was run with real npm packages
 ## 1. Install
 
 ```
-git clone <this repository> ratchet && cd ratchet
-npm ci
-npm run build
+npm install -g ratchet-verify
 ```
 
-Run it as `node <path-to-ratchet>/dist/cli/main.js`. Below that is written
-`ratchet`.
+or run it without installing: `npx ratchet-verify`. The command is
+`ratchet-verify`, with `ratchet` as a short alias; the examples below use
+`ratchet`. To work from source instead, clone the repository, then
+`npm ci && npm run build` and run `node dist/cli/main.js`.
 
 ## 2. How a run works
 

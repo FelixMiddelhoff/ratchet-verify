@@ -24,10 +24,9 @@ Node.js 24 or newer, npm, git. npm projects with a `package-lock.json`
 ## Quick start
 
 ```
-git clone <this repository> ratchet && cd ratchet
-npm ci && npm run build
+npm install -g ratchet-verify        # or run it with: npx ratchet-verify
 cd /path/to/your/project             # a git repo with the bump applied
-node /path/to/ratchet/dist/cli/main.js . --base main
+ratchet-verify . --base main         # the short alias `ratchet` works too
 ```
 
 `--base main` compares the working tree's `package-lock.json` with the one
