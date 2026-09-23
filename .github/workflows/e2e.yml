@@ -1,0 +1,19 @@
+name: e2e
+# Real installs against the npm registry and GitHub: kept apart from ci.yml so registry
+# flakiness never blocks a pull request.
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+jobs:
+  corpus:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - run: npm ci
+      - run: npm run build
+      - run: npm run corpus
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

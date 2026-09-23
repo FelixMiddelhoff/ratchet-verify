@@ -10,6 +10,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "tsc --noEmit",
+    "corpus": "node corpus/run.mjs",
     "test": "tsc -p tsconfig.test.json && node --test \"dist-test/test/**/*.test.js\""
   },
   "dependencies": { "typescript": "^5.9.0" },
