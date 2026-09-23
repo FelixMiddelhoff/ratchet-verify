@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 
-export type OutputFormat = "text" | "json" | "sarif";
+export type OutputFormat = "text" | "json" | "sarif" | "markdown";
 
 export interface CliArgs {
   projectDir: string;
@@ -10,6 +10,8 @@ export interface CliArgs {
   newLockfile?: string;
   format: OutputFormat;
   failOn?: "broken" | "risky";
+  /** Also write report.json, report.md and report.sarif here, whatever the stdout format. */
+  reportDir?: string;
   help: boolean;
 }
 
@@ -22,6 +24,8 @@ Usage: ratchet [project-dir] (--base <git-ref> | --old <lockfile>) [options]
   --new <file>        lockfile with the proposed bump (default: <project-dir>/package-lock.json)
   --json              machine-readable output
   --sarif             SARIF 2.1.0 output for code scanning
+  --markdown          Markdown output, as posted in pull request comments
+  --report-dir <dir>  also write report.json, report.md and report.sarif into <dir>
   --fail-on <level>   exit 1 when the overall verdict is "broken" (default) or "risky"
   -h, --help          show this help
 
@@ -38,13 +42,17 @@ export function parseCliArgs(argv: string[]): CliArgs {
       new: { type: "string" },
       json: { type: "boolean" },
       sarif: { type: "boolean" },
+      markdown: { type: "boolean" },
+      "report-dir": { type: "string" },
       "fail-on": { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
 
   if (positionals.length > 1) throw new Error(`expected at most one project directory, got ${positionals.length}`);
-  if (values.json && values.sarif) throw new Error("--json and --sarif are mutually exclusive");
+  if ([values.json, values.sarif, values.markdown].filter(Boolean).length > 1) {
+    throw new Error("--json, --sarif and --markdown are mutually exclusive");
+  }
   if (values.base && values.old) throw new Error("--base and --old are mutually exclusive");
 
   const failOn = values["fail-on"];
@@ -57,8 +65,9 @@ export function parseCliArgs(argv: string[]): CliArgs {
     base: values.base,
     oldLockfile: values.old,
     newLockfile: values.new,
-    format: values.json ? "json" : values.sarif ? "sarif" : "text",
+    format: values.json ? "json" : values.sarif ? "sarif" : values.markdown ? "markdown" : "text",
     failOn,
+    reportDir: values["report-dir"],
     help: values.help ?? false,
   };
 }

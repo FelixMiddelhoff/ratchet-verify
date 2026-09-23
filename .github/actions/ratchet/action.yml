@@ -1,0 +1,101 @@
+name: ratchet
+description: Verify a dependency bump before you merge it - runs your tests, checks changelog breaking changes against your code, and bisects failures.
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  base:
+    description: Git ref whose package-lock.json is the "before" state. Defaults to the pull request's base commit.
+    default: ${{ github.event.pull_request.base.sha }}
+  project-dir:
+    description: Directory containing package.json and package-lock.json.
+    default: "."
+  fail-on:
+    description: 'Fail the check when the overall verdict is "broken" (default) or "risky".'
+    default: broken
+  comment:
+    description: Post (and keep updating) a verdict comment on the pull request.
+    default: "true"
+  sarif:
+    description: Upload results to GitHub code scanning (needs security-events "write").
+    default: "false"
+  ratchet-version:
+    description: npm version or tag of ratchet to run.
+    default: latest
+  node-version:
+    description: Node.js version used to run ratchet and your tests.
+    default: "24"
+
+outputs:
+  verdict:
+    description: Overall verdict - safe, risky or broken.
+    value: ${{ steps.run.outputs.verdict }}
+  report-dir:
+    description: Directory holding report.json, report.md and report.sarif.
+    value: ${{ steps.run.outputs.report-dir }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    # The tool's own GITHUB_TOKEN is only used for changelog lookups on the host; the sandbox that
+    # installs candidate versions gets a scrubbed environment and never sees it.
+    - id: run
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        RATCHET_BASE: ${{ inputs.base }}
+        RATCHET_DIR: ${{ inputs.project-dir }}
+        RATCHET_FAIL_ON: ${{ inputs.fail-on }}
+        RATCHET_VERSION: ${{ inputs.ratchet-version }}
+      run: |
+        report_dir="${RUNNER_TEMP}/ratchet-report"
+        set +e
+        npx --yes "ratchet@${RATCHET_VERSION}" "${RATCHET_DIR}" \
+          --base "${RATCHET_BASE}" --fail-on "${RATCHET_FAIL_ON}" --report-dir "${report_dir}"
+        code=$?
+        set -e
+        echo "exit-code=${code}" >> "$GITHUB_OUTPUT"
+        echo "report-dir=${report_dir}" >> "$GITHUB_OUTPUT"
+        if [ -f "${report_dir}/report.json" ]; then
+          echo "verdict=$(node -p "JSON.parse(require('fs').readFileSync('${report_dir}/report.json','utf8')).overall")" >> "$GITHUB_OUTPUT"
+        fi
+
+    - if: inputs.comment == 'true' && github.event_name == 'pull_request' && steps.run.outputs.verdict != ''
+      uses: actions/github-script@v7
+      env:
+        REPORT_DIR: ${{ steps.run.outputs.report-dir }}
+      with:
+        script: |
+          const fs = require('fs');
+          const body = fs.readFileSync(`${process.env.REPORT_DIR}/report.md`, 'utf8');
+          const marker = '<!-- ratchet-verdict -->';
+          const { owner, repo } = context.repo;
+          const issue_number = context.issue.number;
+          const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+          const existing = comments.find((c) => c.body && c.body.includes(marker));
+          if (existing) {
+            await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+          } else {
+            await github.rest.issues.createComment({ owner, repo, issue_number, body });
+          }
+
+    - if: inputs.sarif == 'true' && steps.run.outputs.verdict != ''
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ steps.run.outputs.report-dir }}/report.sarif
+        category: ratchet
+
+    # Exit codes from ratchet: 0 ok, 1 verdict at or above fail-on, 2 usage/runtime error.
+    - if: steps.run.outputs.exit-code != '0'
+      shell: bash
+      env:
+        CODE: ${{ steps.run.outputs.exit-code }}
+        VERDICT: ${{ steps.run.outputs.verdict }}
+      run: |
+        echo "::error title=ratchet::verdict '${VERDICT:-unknown}' (exit code ${CODE})"
+        exit "${CODE}"

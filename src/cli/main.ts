@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { renderMarkdown } from "../ci/comment.js";
 import { loadConfig } from "../config.js";
 import { runPipeline, type PipelineDeps } from "../pipeline/index.js";
 import { realDeps } from "../pipeline/real.js";
 import { renderJson, renderSarif, renderText, type Report } from "../report/index.js";
-import { parseCliArgs, USAGE } from "./args.js";
+import { parseCliArgs, USAGE, type OutputFormat } from "./args.js";
 import { readFileAtRef } from "./git.js";
 
 const LOCKFILE = "package-lock.json";
@@ -42,6 +43,7 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
     const report = await runPipeline({ oldLockfile, newLockfile, manifest, config }, deps);
 
     io.out(render(report, args.format));
+    if (args.reportDir) await writeReports(resolve(args.reportDir), report);
     return exitCode(report, config.failOn);
   } catch (error) {
     io.err(`ratchet: ${(error as Error).message}`);
@@ -53,8 +55,16 @@ function defaultDeps(config: Awaited<ReturnType<typeof loadConfig>>, env: NodeJS
   return ({ projectDir, oldLockfile }) => realDeps({ projectDir, oldLockfile, config, githubToken: env.GITHUB_TOKEN });
 }
 
-function render(report: Report, format: "text" | "json" | "sarif"): string {
-  return { text: renderText, json: renderJson, sarif: renderSarif }[format](report);
+function render(report: Report, format: OutputFormat): string {
+  return { text: renderText, json: renderJson, sarif: renderSarif, markdown: renderMarkdown }[format](report);
+}
+
+/** One pipeline run feeds the CI comment, the SARIF upload and the action's outputs. */
+async function writeReports(dir: string, report: Report): Promise<void> {
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "report.json"), renderJson(report));
+  await writeFile(join(dir, "report.md"), renderMarkdown(report));
+  await writeFile(join(dir, "report.sarif"), renderSarif(report));
 }
 
 function exitCode(report: Report, failOn: "broken" | "risky"): number {
