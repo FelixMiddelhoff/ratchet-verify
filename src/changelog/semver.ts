@@ -63,3 +63,11 @@ export function versionsInRange(all: string[], oldVersion: string, newVersion: s
     .filter((v) => compareVersions(v, oldVersion) > 0 && compareVersions(v, newVersion) <= 0)
     .sort(compareVersions);
 }
+
+const LISTED_VERSIONS = 6;
+
+/** "1.2.0, 1.3.0" for a few; "58 versions (25.0.0 to 26.6.2)" when listing them all would bury the message. */
+export function describeVersions(versions: string[]): string {
+  if (versions.length <= LISTED_VERSIONS) return versions.join(", ");
+  return `${versions.length} versions (${versions[0]} to ${versions[versions.length - 1]})`;
+}

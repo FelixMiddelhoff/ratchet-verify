@@ -56,10 +56,15 @@ Notes:
 Both open ordinary pull requests that change `package.json` and
 `package-lock.json`, so the workflow above runs on them unchanged. To make a
 red verdict block merging, mark the `ratchet` check as required in the
-repository's branch protection rules. Dependabot pull requests get a read-only
-`GITHUB_TOKEN` by default, so the comment step may not be able to post there;
-use the check result and the `report-dir` output (or `--sarif` with code
-scanning) to see the details.
+repository's branch protection rules.
+
+Dependabot pull requests are treated like pull requests from forks for secrets,
+and their `GITHUB_TOKEN` is read-only by default. With the `permissions:` block
+shown above (`pull-requests: write`), the workflow in this repository posted its
+verdict comment on a real Dependabot pull request (a `@types/node` 24 → 26 bump)
+and passed. If your organisation restricts the token further and the comment
+step cannot post, the check result and the `report-dir` output (or `--sarif`
+with code scanning) still carry the details.
 
 ## Any other CI system
 

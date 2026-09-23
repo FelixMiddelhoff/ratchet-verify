@@ -169,3 +169,10 @@ test("GitHub rate limit is called out and falls back to CHANGELOG.md", async () 
   assert.ok(result.notes.some((n) => n.includes("rate limited")));
   assert.equal(result.source, "changelog-file");
 });
+
+test("describeVersions lists a few versions and summarises a long run", async () => {
+  const { describeVersions } = await import("../src/changelog/index.js");
+  assert.equal(describeVersions(["1.0.0", "1.1.0"]), "1.0.0, 1.1.0");
+  const many = Array.from({ length: 58 }, (_, i) => `1.${i}.0`);
+  assert.equal(describeVersions(many), "58 versions (1.0.0 to 1.57.0)");
+});

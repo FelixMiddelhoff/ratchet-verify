@@ -13,6 +13,7 @@ All notable changes to this project are documented here, in
 
 ### Changed
 - Text output now ends with an `isolation:` line.
+- Long runs of versions without changelog notes are summarised ("58 versions (25.0.0 to 26.6.2)") instead of listed one by one.
 
 ## [0.1.1] - 2026-09-23
 
