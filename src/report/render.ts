@@ -11,7 +11,7 @@ export function renderText(report: Report): string {
 }
 
 function renderGroup(group: VerdictGroup): string {
-  const names = group.members.map((v) => v.name).join(", ");
+  const names = nameList(group.members.map((v) => v.name));
   const first = group.members[0]!;
   return [`${first.status.toUpperCase()}  ${group.members.length} transitive dependencies (${names})`, `  ${first.summary}`].join("\n");
 }
@@ -48,4 +48,12 @@ function renderEvidence(e: Evidence): string[] {
 
 function indent(text: string): string[] {
   return text ? text.split("\n").map((l) => `    | ${l}`) : [];
+}
+
+const MAX_LISTED_NAMES = 6;
+
+/** A failing bump can drag in dozens of transitive changes; the first few say enough, JSON has the rest. */
+function nameList(names: string[]): string {
+  if (names.length <= MAX_LISTED_NAMES) return names.join(", ");
+  return `${names.slice(0, MAX_LISTED_NAMES).join(", ")} and ${names.length - MAX_LISTED_NAMES} more`;
 }
