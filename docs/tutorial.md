@@ -63,6 +63,7 @@ RISKY  commander 8.3.0 -> 9.0.0 (direct)
   caveat: major version bump: breaking changes are allowed even if the changelog does not list them
 
 overall: risky
+isolation: temp-dir: credentials are withheld, but install scripts can still read host files (use --isolation container)
 ```
 
 The tests you wrote pass, but the release notes list breaking changes that name
@@ -108,6 +109,7 @@ SAFE (PARTIAL)  lodash 4.17.20 -> 4.17.21 (direct)
   note: No notes found for: 4.17.21
 
 overall: safe (partial)
+isolation: temp-dir: credentials are withheld, but install scripts can still read host files (use --isolation container)
 ```
 
 The tests passed in the sandbox, but lodash publishes no release notes or
@@ -137,6 +139,7 @@ RISKY  commander 8.3.0 -> 9.0.0 (direct)
   caveat: major version bump: breaking changes are allowed even if the changelog does not list them
 
 overall: risky
+isolation: temp-dir: credentials are withheld, but install scripts can still read host files (use --isolation container)
 ```
 
 The tests are green, yet the release notes list breaking changes that name
@@ -171,6 +174,7 @@ BROKEN  chalk 4.1.2 -> 5.3.0 (direct)
     | …
 
 overall: broken
+isolation: temp-dir: credentials are withheld, but install scripts can still read host files (use --isolation container)
 ```
 
 What happened, in order:
@@ -224,6 +228,8 @@ For the commander project `--markdown` prints:
 - **caveat:** major version bump: breaking changes are allowed even if the changelog does not list them
 
 </details>
+
+<sub>isolation: temp-dir: credentials are withheld, but install scripts can still read host files (use --isolation container)</sub>
 ```
 
 ## 7. In CI
@@ -234,7 +240,36 @@ optionally uploads the SARIF, and fails the check when the overall verdict
 reaches `fail-on`. Setup, inputs, Dependabot/Renovate and other CI systems are
 in [ci.md](ci.md).
 
-## 8. Where next
+## 8. Stronger isolation: run the installs in a container
+
+Installing a candidate version runs its install scripts. By default ratchet
+withholds your credentials from them (`temp-dir` isolation), but a malicious
+script could still read absolute host paths. With docker or podman installed,
+run everything inside a container that can see nothing but the sandbox
+directory:
+
+```
+ratchet-verify . --base main --isolation container
+```
+
+The report then ends with
+
+```
+isolation: container (docker, node:24): installs and tests could only see the sandbox directory
+```
+
+Use `--isolation auto` to use a container when an engine is available and fall
+back to `temp-dir` with a warning otherwise. Without an engine,
+`--isolation container` is an error, never a silent downgrade:
+
+```
+ratchet: isolation "container" needs docker or podman, but no working engine was found (is the daemon running?). Use --isolation temp-dir to accept weaker isolation.
+```
+
+The first run pulls the image (`node:24` by default; `containerImage` in
+`.ratchetrc` changes it). Details in [configuration.md](configuration.md).
+
+## 9. Where next
 
 - [verdicts.md](verdicts.md): exactly what each verdict and caveat means
 - [ci.md](ci.md): the GitHub Action, Dependabot/Renovate, other CI systems

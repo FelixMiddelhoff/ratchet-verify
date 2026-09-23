@@ -2,7 +2,7 @@
 // known outcome. Needs network (npm registry, GitHub) and a built CLI: `npm run build` first.
 //
 //   node corpus/run.mjs [substring-filter]
-import { execFile, spawn } from "node:child_process";
+import { execFile, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -18,7 +18,13 @@ if (!existsSync(cli)) throw new Error("run `npm run build` first");
 const filter = process.argv[2];
 const results = [];
 
+const hasContainerEngine = ["docker", "podman"].some((engine) => spawnSync(engine, ["info"], { stdio: "ignore", shell: isWindows }).status === 0);
+
 for (const testCase of cases.filter((c) => !filter || c.name.includes(filter))) {
+  if (testCase.isolation === "container" && !hasContainerEngine) {
+    console.log(`skip  ${testCase.name} (no container engine)`);
+    continue;
+  }
   const started = Date.now();
   let failure;
   try {
@@ -65,7 +71,7 @@ async function runCase(testCase) {
     mkdirSync(home);
     if (testCase.fakeHomeNpmrc) writeFileSync(join(home, ".npmrc"), testCase.fakeHomeNpmrc);
     const run = await runRatchet(
-      [dir, "--old", join(dir, "old-lock.json"), "--old-package-json", join(dir, "old-package.json"), "--json"],
+      [dir, "--old", join(dir, "old-lock.json"), "--old-package-json", join(dir, "old-package.json"), "--json", ...(testCase.isolation ? ["--isolation", testCase.isolation] : [])],
       { ...process.env, ...testCase.env, HOME: home, USERPROFILE: home },
     );
     if (run.status !== 0 && run.status !== 1) return `ratchet exited ${run.status}: ${run.stderr.trim()}`;
@@ -78,6 +84,7 @@ async function runCase(testCase) {
     if (verdict.status !== expect.status) return `${verdict.name} is ${verdict.status}, expected ${expect.status}\n      ${verdict.summary}`;
     if (expect.confidence && verdict.confidence !== expect.confidence) return `confidence ${verdict.confidence}, expected ${expect.confidence}`;
     if (expect.summary && !expect.summary.test(verdict.summary)) return `summary "${verdict.summary}" does not match ${expect.summary}`;
+    if (expect.isolation && report.isolation?.level !== expect.isolation) return `isolation ${report.isolation?.level}, expected ${expect.isolation}`;
     if (expect.evidenceKind && !verdict.evidence.some((e) => e.kind === expect.evidenceKind)) return `no ${expect.evidenceKind} evidence`;
 
     const exfil = existsSync(exfilPath) ? JSON.parse(readFileSync(exfilPath, "utf8")) : undefined;

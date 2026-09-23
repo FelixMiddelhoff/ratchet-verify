@@ -1,4 +1,5 @@
 import { groupVerdicts, overallLabel, type VerdictGroup } from "./group.js";
+import { describeIsolation } from "./isolation.js";
 import type { DependencyVerdict, Evidence, Report } from "./types.js";
 
 export function renderJson(report: Report): string {
@@ -7,7 +8,8 @@ export function renderJson(report: Report): string {
 
 export function renderText(report: Report): string {
   const blocks = groupVerdicts(report.verdicts).map((g) => (g.members.length > 1 ? renderGroup(g) : renderVerdict(g.members[0]!)));
-  return [...blocks, `overall: ${overallLabel(report)}`].join("\n\n");
+  const footer = [`overall: ${overallLabel(report)}`, ...(report.isolation ? [`isolation: ${describeIsolation(report.isolation)}`] : [])];
+  return [...blocks, footer.join("\n")].join("\n\n");
 }
 
 function renderGroup(group: VerdictGroup): string {

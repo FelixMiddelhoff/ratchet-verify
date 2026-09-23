@@ -102,6 +102,8 @@ package.json + old/new package-lock.json
   and TS alike). HTTP, CLI parsing, process spawning and file I/O are Node
   built-ins. A tool that judges supply-chain safety should have a small
   supply chain of its own.
+- **Isolated installs.** Optionally in a docker/podman container that sees
+  only the sandbox directory (see below).
 - **Failures are explained, not just reported.** If the suite was already red
   on the old lockfile, that is not blamed on the bump. If several
   dependencies changed, each direct one is tested alone, and only the ones
@@ -132,11 +134,12 @@ ratchet-verify [project-dir] (--base <git-ref> | --old <lockfile>) [options]
   --new <file>        lockfile with the proposed bump (default: project's)
   --json | --sarif | --markdown   output format (default: text)
   --report-dir <dir>  also write report.json, report.md and report.sarif
+  --isolation <mode>  temp-dir (default), container (docker/podman) or auto
   --fail-on <level>   exit 1 on "broken" (default) or "risky"
   -v, --version       print the version
 ```
 
-Project options (`ignore`, `maxInstalls`, `testTimeoutMs`, `failOn`) live in
+Project options (`ignore`, `maxInstalls`, `testTimeoutMs`, `failOn`, `isolation`, `containerRuntime`, `containerImage`) live in
 a `.ratchetrc` file: see [docs/configuration.md](docs/configuration.md).
 
 ## GitHub Action
@@ -165,19 +168,31 @@ jobs:
 
 Installing a candidate version runs its install scripts, and attacks such as
 the April 2026 SAP CAP "mini Shai-Hulud" steal credentials at exactly that
-moment. ratchet installs in a temporary directory with an *allowlisted*
-environment (no `GITHUB_TOKEN`, `NPM_TOKEN`, cloud credentials) and a
-redirected home directory, so the usual `~/.npmrc` and `~/.aws` lookups find
-nothing. The repository's [corpus](corpus/) replays a credential-stealing
-`preinstall` script against this and checks that nothing leaks.
+moment. ratchet has two isolation levels, and every report states which one
+was used:
 
-This is **temp-directory isolation**: an install script that reads absolute
-host paths, or reaches the network, is *not* stopped. Run ratchet in CI or a
-disposable environment, not on a machine holding secrets you can't afford to
-lose. A container/VM mode is the top item under [Help wanted](#help-wanted).
+- **`temp-dir` (default).** Installs run in a temporary copy of the project
+  with an *allowlisted* environment (no `GITHUB_TOKEN`, `NPM_TOKEN`, cloud
+  credentials) and a redirected home directory, so the usual `~/.npmrc` and
+  `~/.aws` lookups find nothing. An install script that reads absolute host
+  paths, or reaches the network, is **not** stopped.
+- **`container` (`--isolation container`).** Everything runs in a docker or
+  podman container whose only mount is the sandbox directory, with all
+  capabilities dropped and a from-scratch environment. A script that tries to
+  read `~/.ssh` or any other host path finds nothing there. `--isolation auto`
+  uses a container when an engine is available. Network access is not
+  restricted in either level.
+
+The repository's [corpus](corpus/) replays a credential-stealing `preinstall`
+script and checks that nothing leaks, and an integration test shows the
+difference between the levels: a script can read a host file under `temp-dir`
+and cannot inside a container. Run ratchet on CI runners or disposable
+machines either way. Details: [docs/configuration.md](docs/configuration.md#isolation).
 
 ## Limitations
 
+- **Network is open.** Even in a container, installs and tests can reach any
+  host; container mode limits what they can *read*, not where they can send.
 - **Tests-based.** ratchet proves "your tests still pass and no cited
   breaking change hits your code". It does *not* prove a version isn't
   malicious: behaviour-preserving malice (the event-stream and ua-parser-js
@@ -230,14 +245,9 @@ duplicate effort; small fixes can go straight to a pull request.
 
 ### High impact
 
-- **Container / VM sandbox mode.** The strongest fix for the
-  [safety limitation above](#safety-of-the-install-step). Run installs and tests
-  inside a Docker/Podman container (or similar) with no host mounts other than
-  the project copy, network limited to the package registry where the runtime
-  allows it, and the same allowlisted environment. *Done when:* a corpus case
-  where the install script reads an absolute host path (`~/.ssh`, `~/.aws`)
-  shows it fails to read it, and the isolation level is reported in the output.
-  Entry point: `src/sandbox/sandbox.ts` (`IsolationLevel`), `corpus/`.
+- **Restrict network egress in container mode.** Container isolation limits
+  what install scripts and tests can *read*, not where they can send. Explore
+  registry-only installs and offline tests (issue #23).
 - **Yarn and pnpm lockfile support.** Parse `yarn.lock` (classic and berry) and
   `pnpm-lock.yaml` into the same `InstalledPackages` shape that
   `src/lockfile/parse.ts` produces from `package-lock.json`, so the rest of the

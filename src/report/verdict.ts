@@ -1,6 +1,7 @@
 import type { BisectResult } from "../bisect/index.js";
-import type { ChangelogResult } from "../changelog/index.js";
+import { describeVersions, type ChangelogResult } from "../changelog/index.js";
 import type { DependencyChange } from "../lockfile/index.js";
+import type { IsolationInfo } from "../sandbox/index.js";
 import type { MatchResult } from "../match/index.js";
 import type { TestOutcome } from "../testrun/index.js";
 import type { UsageScan } from "../usage/index.js";
@@ -20,10 +21,10 @@ export interface DependencyAssessment {
 const OUTPUT_TAIL_LINES = 40;
 const SEVERITY: VerdictStatus[] = ["safe", "risky", "broken"];
 
-export function buildReport(assessments: DependencyAssessment[]): Report {
+export function buildReport(assessments: DependencyAssessment[], isolation?: IsolationInfo): Report {
   const verdicts = assessments.map(judge);
   const overall = verdicts.reduce<VerdictStatus>((worst, v) => (SEVERITY.indexOf(v.status) > SEVERITY.indexOf(worst) ? v.status : worst), "safe");
-  return { schemaVersion: 1, overall, verdicts };
+  return isolation ? { schemaVersion: 1, overall, isolation, verdicts } : { schemaVersion: 1, overall, verdicts };
 }
 
 /**
@@ -149,7 +150,7 @@ function gatherGaps(a: DependencyAssessment, base: PartialBase): { caveats: stri
 
   if (!isNew && !isRemoved) {
     if (a.changelog.source === "none") caveats.push("no changelog was found; this is a tests-only verdict");
-    else if (a.changelog.missingVersions.length > 0) caveats.push(`no changelog notes for: ${a.changelog.missingVersions.join(", ")}`);
+    else if (a.changelog.missingVersions.length > 0) caveats.push(`no changelog notes for ${describeVersions(a.changelog.missingVersions)}`);
     if (a.match.majorBoundary) caveats.push("major version bump: breaking changes are allowed even if the changelog does not list them");
     if (a.match.hits.some((h) => h.confidence === "low")) {
       caveats.push("code uses the whole module or its default export, so listed breaking changes cannot be ruled out");

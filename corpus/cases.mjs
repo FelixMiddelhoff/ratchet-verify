@@ -45,6 +45,19 @@ export const cases = [
     expect: { overall: "broken", dependency: "faker", status: "broken" },
   },
   {
+    name: "chalk 4.1.2 -> 5.3.0 inside a container (full pipeline incl. bisection)",
+    source: "real",
+    isolation: "container",
+    bump: { name: "chalk", old: "4.1.2", new: "5.3.0" },
+    files: {
+      "test.js": testScript(`
+        const chalk = require("chalk");
+        if (typeof chalk.red("x") !== "string") throw new Error("chalk broke");
+      `),
+    },
+    expect: { overall: "broken", dependency: "chalk", status: "broken", summary: /broken by 5\.0\.0/, isolation: "container" },
+  },
+  {
     name: "commander 8.3.0 -> 9.0.0 (green tests, breaking notes hit the code)",
     source: "real",
     bump: { name: "commander", old: "8.3.0", new: "9.0.0" },

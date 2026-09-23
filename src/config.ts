@@ -10,6 +10,11 @@ export interface Config {
   testTimeoutMs: number;
   /** Exit non-zero when the overall verdict is at least this severe. */
   failOn: Exclude<VerdictStatus, "safe">;
+  /** "container" runs installs and tests in docker/podman; "auto" uses one when available. */
+  isolation: "temp-dir" | "container" | "auto";
+  containerRuntime: "auto" | "docker" | "podman";
+  /** Image for container isolation; defaults to node:24. */
+  containerImage?: string;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -17,6 +22,8 @@ export const DEFAULT_CONFIG: Config = {
   maxInstalls: 10,
   testTimeoutMs: 10 * 60 * 1000,
   failOn: "broken",
+  isolation: "temp-dir",
+  containerRuntime: "auto",
 };
 
 export const CONFIG_FILE = ".ratchetrc";
@@ -34,7 +41,7 @@ export async function loadConfig(projectDir: string): Promise<Config> {
 
 export function parseConfig(text: string): Config {
   const raw = JSON.parse(text) as Record<string, unknown>;
-  const unknown = Object.keys(raw).filter((key) => !(key in DEFAULT_CONFIG));
+  const unknown = Object.keys(raw).filter((key) => !(key in DEFAULT_CONFIG) && key !== "containerImage");
   if (unknown.length > 0) throw new Error(`${CONFIG_FILE}: unknown option(s): ${unknown.join(", ")}`);
 
   const config = { ...DEFAULT_CONFIG, ...raw } as Config;
@@ -49,6 +56,15 @@ export function parseConfig(text: string): Config {
   }
   if (config.failOn !== "broken" && config.failOn !== "risky") {
     throw new Error(`${CONFIG_FILE}: "failOn" must be "broken" or "risky"`);
+  }
+  if (!["temp-dir", "container", "auto"].includes(config.isolation)) {
+    throw new Error(`${CONFIG_FILE}: "isolation" must be "temp-dir", "container" or "auto"`);
+  }
+  if (!["auto", "docker", "podman"].includes(config.containerRuntime)) {
+    throw new Error(`${CONFIG_FILE}: "containerRuntime" must be "auto", "docker" or "podman"`);
+  }
+  if (config.containerImage !== undefined && (typeof config.containerImage !== "string" || config.containerImage === "")) {
+    throw new Error(`${CONFIG_FILE}: "containerImage" must be a non-empty image name`);
   }
   return config;
 }

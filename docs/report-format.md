@@ -22,6 +22,7 @@ added within a version; existing ones aren't removed or changed.
 {
   "schemaVersion": 1,
   "overall": "risky",
+  "isolation": { "level": "temp-dir" },
   "verdicts": [
     {
       "name": "commander",
@@ -42,6 +43,7 @@ added within a version; existing ones aren't removed or changed.
 | Field | Values / meaning |
 |---|---|
 | `overall` | `"safe"`, `"risky"` or `"broken"`: the worst verdict below. `verdicts` is empty (and `overall` is `"safe"`) when no dependency changed. |
+| `isolation` | How installs and tests were isolated: `{ "level": "temp-dir" }` or `{ "level": "container", "runtime": "docker", "image": "node:24" }`. Absent only for reports built without running anything. |
 | `status` | `"safe"`, `"risky"`, `"broken"` |
 | `confidence` | `"full"`, or `"reduced"` when a signal was missing. `status: "safe"` with `confidence: "reduced"` is the "safe (partial)" verdict. Don't treat it as an all-clear. |
 | `oldVersion` / `newVersion` | Absent for a dependency that was added / removed. |
@@ -107,7 +109,7 @@ Fully evaluated `safe` verdicts produce no result. Example result:
 ## Markdown (`--markdown`)
 
 The pull request comment: a summary table, with a collapsible section per
-verdict that needs explaining. It begins with the marker
+verdict that needs explaining, and a footer line stating the isolation level. It begins with the marker
 `<!-- ratchet-verdict -->`, which is how the GitHub Action finds its own comment
 to update instead of posting a new one. Output is kept below GitHub's comment
 size limit. See [tutorial.md](tutorial.md#6-machine-readable-output) for a

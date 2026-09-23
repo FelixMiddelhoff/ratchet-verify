@@ -46,7 +46,7 @@ test("safe but no changelog: downgraded to a tests-only verdict", () => {
 test("safe but changelog missing some versions: caveat names them", () => {
   const v = judge(assessment({ changelog: { source: "github-releases", entries: [], missingVersions: ["1.2.0"], availableVersions: [], notes: [] } }));
   assert.equal(v.confidence, "reduced");
-  assert.ok(v.caveats.some((c) => c.includes("1.2.0")));
+  assert.ok(v.caveats.some((c) => c.includes("1.2.0")), "few versions are listed by name");
 });
 
 test("major bump with no hits is never a full-confidence safe", () => {

@@ -1,8 +1,8 @@
 import { normalizeRepository, type GitHubRepo } from "./repo.js";
 import { parseChangelogSections } from "./sections.js";
-import { compareVersions, versionsInRange } from "./semver.js";
+import { compareVersions, describeVersions, versionsInRange } from "./semver.js";
 
-export { normalizeRepository, parseChangelogSections, versionsInRange };
+export { describeVersions, normalizeRepository, parseChangelogSections, versionsInRange };
 export type { GitHubRepo };
 
 export type FetchLike = (url: string, init?: { headers?: Record<string, string> }) => Promise<{
@@ -69,7 +69,7 @@ export async function fetchChangelog(request: ChangelogRequest): Promise<Changel
 
   const origins = new Set(result.entries.map((e) => e.origin));
   result.source = origins.size === 2 ? "both" : origins.has("github-release") ? "github-releases" : origins.has("changelog-file") ? "changelog-file" : "none";
-  if (result.missingVersions.length > 0) result.notes.push(`No notes found for: ${result.missingVersions.join(", ")}`);
+  if (result.missingVersions.length > 0) result.notes.push(`No notes found for ${describeVersions(result.missingVersions)}`);
   return result;
 }
 

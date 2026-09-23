@@ -5,6 +5,16 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+### Added
+- Container isolation (`--isolation container|auto|temp-dir`, `isolation`, `containerRuntime` and `containerImage` in `.ratchetrc`): installs and tests run in a docker or podman container that only sees the sandbox directory.
+- Every report states the isolation level (text, JSON `isolation`, Markdown footer).
+- GitHub Action input `isolation`.
+- Corpus case that runs the full pipeline inside a container.
+
+### Changed
+- Text output now ends with an `isolation:` line.
+- Long runs of versions without changelog notes are summarised ("58 versions (25.0.0 to 26.6.2)") instead of listed one by one.
+
 ## [0.1.1] - 2026-09-23
 
 ### Added

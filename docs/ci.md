@@ -35,6 +35,7 @@ push, and fails the check according to `fail-on`.
 | `fail-on` | `broken` | `broken` or `risky` |
 | `comment` | `true` | Post and update the verdict comment |
 | `sarif` | `false` | Upload results to code scanning (needs `security-events: write`) |
+| `isolation` | `temp-dir` | `temp-dir`, `container` or `auto`. GitHub-hosted Ubuntu runners have docker, so `container` works out of the box (the image is pulled on the first run) |
 | `ratchet-version` | `latest` | Version or tag of `ratchet-verify` to run |
 | `node-version` | `24` | Node.js used to run ratchet and your tests |
 
@@ -55,10 +56,15 @@ Notes:
 Both open ordinary pull requests that change `package.json` and
 `package-lock.json`, so the workflow above runs on them unchanged. To make a
 red verdict block merging, mark the `ratchet` check as required in the
-repository's branch protection rules. Dependabot pull requests get a read-only
-`GITHUB_TOKEN` by default, so the comment step may not be able to post there;
-use the check result and the `report-dir` output (or `--sarif` with code
-scanning) to see the details.
+repository's branch protection rules.
+
+Dependabot pull requests are treated like pull requests from forks for secrets,
+and their `GITHUB_TOKEN` is read-only by default. With the `permissions:` block
+shown above (`pull-requests: write`), the workflow in this repository posted its
+verdict comment on a real Dependabot pull request (a `@types/node` 24 → 26 bump)
+and passed. If your organisation restricts the token further and the comment
+step cannot post, the check result and the `report-dir` output (or `--sarif`
+with code scanning) still carry the details.
 
 ## Any other CI system
 
@@ -93,8 +99,11 @@ commit (`--base HEAD~1`).
 
 ## Security notes for CI
 
-Installing a candidate version executes its install scripts. ratchet strips
-credentials from that environment and redirects the home directory, but it is
-temp-directory isolation, not a container: run it on ephemeral CI runners, not
-on a machine holding long-lived secrets. Details in the
-[README](../README.md#safety-of-the-install-step).
+Installing a candidate version executes its install scripts. By default ratchet
+strips credentials from that environment and redirects the home directory
+(`temp-dir` isolation), which does not stop a script from reading host files.
+In CI, prefer `isolation: container` (docker or podman, present on GitHub-hosted
+Ubuntu runners): the install and the tests then see only the sandbox directory.
+Either way, run on ephemeral runners rather than machines holding long-lived
+secrets. Details in the [README](../README.md#safety-of-the-install-step) and
+[configuration.md](configuration.md#isolation).
