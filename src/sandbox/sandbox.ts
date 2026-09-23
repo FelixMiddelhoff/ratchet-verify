@@ -21,6 +21,8 @@ export interface SandboxOptions {
   projectDir: string;
   /** Replaces the project's lockfile: the candidate state to install. */
   lockfile?: { name: string; content: string };
+  /** Replaces the project's package.json, so an old lockfile is installed against its matching manifest. */
+  packageJson?: string;
   /** Environment to filter; defaults to the real one. Exposed for tests. */
   sourceEnv?: NodeJS.ProcessEnv;
 }
@@ -36,6 +38,7 @@ export async function withSandbox<T>(options: SandboxOptions, work: (sandbox: Sa
     await mkdir(paths.home, { recursive: true });
     await mkdir(paths.tmp, { recursive: true });
     await cp(options.projectDir, dir, { recursive: true, filter: (src) => !NOT_COPIED.has(basename(src)) });
+    if (options.packageJson !== undefined) await writeFile(join(dir, "package.json"), options.packageJson);
     if (options.lockfile) await writeFile(join(dir, options.lockfile.name), options.lockfile.content);
 
     const env = buildSandboxEnv(paths, options.sourceEnv);

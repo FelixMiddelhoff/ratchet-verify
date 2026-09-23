@@ -11,6 +11,7 @@ const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
 export interface RealDepsOptions {
   projectDir: string;
   oldLockfile: string;
+  oldPackageJson?: string;
   config: Config;
   githubToken?: string;
 }
@@ -19,13 +20,13 @@ export interface RealDepsOptions {
 export function realDeps(options: RealDepsOptions): PipelineDeps {
   const { projectDir, config } = options;
   return {
-    testLockfile: (content) =>
-      withSandbox({ projectDir, lockfile: { name: LOCKFILE, content } }, (sandbox) =>
+    testLockfile: (content, packageJson) =>
+      withSandbox({ projectDir, packageJson, lockfile: { name: LOCKFILE, content } }, (sandbox) =>
         installAndTest(sandbox, { testTimeoutMs: config.testTimeoutMs }),
       ),
 
     testDependencyAt: (name, version) =>
-      withSandbox({ projectDir, lockfile: { name: LOCKFILE, content: options.oldLockfile } }, async (sandbox): Promise<TestOutcome> => {
+      withSandbox({ projectDir, packageJson: options.oldPackageJson, lockfile: { name: LOCKFILE, content: options.oldLockfile } }, async (sandbox): Promise<TestOutcome> => {
         // Lock-file-only so npm resolves the dependency's own subtree; scripts stay off until the real install below.
         const pin = await sandbox.run("npm", ["install", `${name}@${version}`, "--package-lock-only", "--ignore-scripts"], INSTALL_TIMEOUT_MS);
         if (pin.exitCode !== 0) return { status: "install-failed", result: pin };

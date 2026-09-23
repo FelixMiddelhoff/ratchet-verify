@@ -133,3 +133,15 @@ test("added dependency skips the changelog fetch", async () => {
   await runPipeline(input({}, { a: "1.0.0" }), deps);
   assert.equal(fetched, false);
 });
+
+test("baseline run installs the old lockfile with the old package.json", async () => {
+  const { deps } = world({ a: "1.3.0" });
+  const seen: (string | undefined)[] = [];
+  const original = deps.testLockfile;
+  deps.testLockfile = async (text, packageJson) => {
+    seen.push(packageJson);
+    return original(text, packageJson);
+  };
+  await runPipeline({ ...input({ a: "1.0.0" }, { a: "1.5.0" }), oldPackageJson: '{"old":true}' }, deps);
+  assert.deepEqual(seen, [undefined, '{"old":true}']); // new state uses the working tree, baseline the old manifest
+});

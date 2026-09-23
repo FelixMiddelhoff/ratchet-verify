@@ -188,3 +188,15 @@ test("sarif: valid 2.1.0 shape, one result per risky call site, nothing for full
   assert.equal(results[0].locations[0].physicalLocation.artifactLocation.uri, "src/a.js");
   assert.equal(results[2].level, "error");
 });
+
+test("shared 'not tested on its own' verdicts collapse into one block in text and markdown, not in JSON", async () => {
+  const { renderMarkdown } = await import("../src/ci/comment.js");
+  const shared = (name: string) =>
+    judge(assessment({ change: { name, path: `node_modules/${name}`, kind: "changed", oldVersion: "1.0.0", newVersion: "1.1.0", direct: false }, test: { status: "blamed-elsewhere", culprits: ["a"] } }));
+  const report = { schemaVersion: 1 as const, overall: "risky" as const, verdicts: [shared("t1"), shared("t2"), shared("t3")] };
+  const text = renderText(report);
+  assert.match(text, /3 transitive dependencies \(t1, t2, t3\)/);
+  assert.equal((text.match(/RISKY/g) ?? []).length, 1);
+  assert.match(renderMarkdown(report), /3 transitive dependencies/);
+  assert.equal(JSON.parse(renderJson(report)).verdicts.length, 3);
+});

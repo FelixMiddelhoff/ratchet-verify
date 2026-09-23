@@ -117,3 +117,16 @@ test("scanUsage walks the tree, skips node_modules and .d.ts, and reports syntax
     },
   );
 });
+
+test("member use of a named import or destructured require is recorded too", () => {
+  assert.deepEqual(scan(`import { program as p } from "lib";
+p.parse();`), [
+    [1, "program", "import"],
+    [2, "parse", "member-access"],
+  ]);
+  assert.deepEqual(scan(`const { program } = require("lib");
+program.option("-d");`), [
+    [1, "program", "require"],
+    [2, "option", "member-access"],
+  ]);
+});

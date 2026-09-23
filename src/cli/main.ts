@@ -19,7 +19,7 @@ export interface CliIo {
   env: NodeJS.ProcessEnv;
 }
 
-export type DepsFactory = (options: { projectDir: string; oldLockfile: string }) => PipelineDeps;
+export type DepsFactory = (options: { projectDir: string; oldLockfile: string; oldPackageJson?: string }) => PipelineDeps;
 
 /** Returns the process exit code: 0 ok, 1 verdict at/above failOn, 2 usage or runtime error. */
 export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory): Promise<number> {
@@ -38,9 +38,10 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
     const oldLockfile = args.oldLockfile ? await readFile(args.oldLockfile, "utf8") : await readFileAtRef(projectDir, args.base!, LOCKFILE);
     const newLockfile = await readFile(args.newLockfile ?? join(projectDir, LOCKFILE), "utf8");
     const manifest = JSON.parse(await readFile(join(projectDir, "package.json"), "utf8"));
+    const oldPackageJson = await readOldPackageJson(args, projectDir);
 
-    const deps = (makeDeps ?? defaultDeps(config, io.env))({ projectDir, oldLockfile });
-    const report = await runPipeline({ oldLockfile, newLockfile, manifest, config }, deps);
+    const deps = (makeDeps ?? defaultDeps(config, io.env))({ projectDir, oldLockfile, oldPackageJson });
+    const report = await runPipeline({ oldLockfile, newLockfile, manifest, oldPackageJson, config }, deps);
 
     io.out(render(report, args.format));
     if (args.reportDir) await writeReports(resolve(args.reportDir), report);
@@ -52,7 +53,14 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
 }
 
 function defaultDeps(config: Awaited<ReturnType<typeof loadConfig>>, env: NodeJS.ProcessEnv): DepsFactory {
-  return ({ projectDir, oldLockfile }) => realDeps({ projectDir, oldLockfile, config, githubToken: env.GITHUB_TOKEN });
+  return (options) => realDeps({ ...options, config, githubToken: env.GITHUB_TOKEN });
+}
+
+/** The manifest that belongs to the old lockfile; undefined means "same as the working tree's". */
+async function readOldPackageJson(args: ReturnType<typeof parseCliArgs>, projectDir: string): Promise<string | undefined> {
+  if (args.oldPackageJson) return readFile(args.oldPackageJson, "utf8");
+  if (!args.base) return undefined;
+  return readFileAtRef(projectDir, args.base, "package.json");
 }
 
 function render(report: Report, format: OutputFormat): string {

@@ -7,6 +7,8 @@ export interface CliArgs {
   /** Git ref whose package-lock.json is the "before" state. */
   base?: string;
   oldLockfile?: string;
+  /** package.json matching --old; defaults to the working tree's. */
+  oldPackageJson?: string;
   newLockfile?: string;
   format: OutputFormat;
   failOn?: "broken" | "risky";
@@ -21,6 +23,7 @@ Usage: ratchet [project-dir] (--base <git-ref> | --old <lockfile>) [options]
 
   --base <ref>        compare against package-lock.json at this git ref (e.g. origin/main)
   --old <file>        compare against this lockfile instead of a git ref
+  --old-package-json <file>  package.json that goes with --old (default: the working tree's)
   --new <file>        lockfile with the proposed bump (default: <project-dir>/package-lock.json)
   --json              machine-readable output
   --sarif             SARIF 2.1.0 output for code scanning
@@ -40,6 +43,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
       base: { type: "string" },
       old: { type: "string" },
       new: { type: "string" },
+      "old-package-json": { type: "string" },
       json: { type: "boolean" },
       sarif: { type: "boolean" },
       markdown: { type: "boolean" },
@@ -64,6 +68,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
     projectDir: positionals[0] ?? ".",
     base: values.base,
     oldLockfile: values.old,
+    oldPackageJson: values["old-package-json"],
     newLockfile: values.new,
     format: values.json ? "json" : values.sarif ? "sarif" : values.markdown ? "markdown" : "text",
     failOn,

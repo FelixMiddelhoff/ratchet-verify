@@ -1,3 +1,4 @@
+import { groupVerdicts } from "../report/group.js";
 import type { DependencyVerdict, Evidence, Report } from "../report/index.js";
 
 /** Lets the action find and update its own comment instead of posting a new one per push. */
@@ -16,10 +17,20 @@ export function renderMarkdown(report: Report): string {
   }
 
   lines.push("| | Dependency | Change | Verdict |", "|---|---|---|---|");
-  for (const v of report.verdicts) {
-    lines.push(`| ${ICON[v.status]} | \`${v.name}\`${v.direct ? "" : " (transitive)"} | ${range(v)} | ${cell(label(v))} |`);
+  const groups = groupVerdicts(report.verdicts);
+  for (const { members } of groups) {
+    const v = members[0]!;
+    if (members.length > 1) {
+      lines.push(`| ${ICON[v.status]} | ${members.length} transitive dependencies | | ${cell(label(v))} |`);
+    } else {
+      lines.push(`| ${ICON[v.status]} | \`${v.name}\`${v.direct ? "" : " (transitive)"} | ${range(v)} | ${cell(label(v))} |`);
+    }
   }
-  for (const v of report.verdicts.filter(needsDetail)) lines.push("", ...details(v));
+  for (const { members } of groups) {
+    const v = members[0]!;
+    if (members.length > 1) lines.push("", ...groupDetails(members));
+    else if (needsDetail(v)) lines.push("", ...details(v));
+  }
 
   return clamp(lines.join("\n"));
 }
@@ -35,6 +46,11 @@ function label(v: DependencyVerdict): string {
 
 function range(v: DependencyVerdict): string {
   return [v.oldVersion, v.newVersion].filter(Boolean).map((x) => `\`${x}\``).join(" → ");
+}
+
+function groupDetails(members: DependencyVerdict[]): string[] {
+  const names = members.map((v) => `\`${v.name}\``).join(", ");
+  return [`<details><summary><b>${members.length} transitive dependencies</b>: ${escapeHtml(members[0]!.summary)}</summary>`, "", names, "", "</details>"];
 }
 
 function details(v: DependencyVerdict): string[] {

@@ -94,7 +94,10 @@ class SourceScan {
     const named = clause.namedBindings;
     if (named && ts.isNamespaceImport(named)) this.bind(named.name, node, true);
     else if (named) {
-      for (const element of named.elements) this.add(element, (element.propertyName ?? element.name).text, "import");
+      for (const element of named.elements) {
+        this.add(element, (element.propertyName ?? element.name).text, "import");
+        this.bind(element.name, element, false); // `program.parse()` on a named export is API use too
+      }
     }
   }
 
@@ -146,6 +149,7 @@ class SourceScan {
     for (const element of pattern.elements) {
       const key = element.propertyName ?? element.name;
       if (ts.isIdentifier(key) || ts.isStringLiteralLike(key)) this.add(element, key.text, kind);
+      if (ts.isIdentifier(element.name)) this.bind(element.name, element, false);
     }
   }
 

@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 
 export interface RunOptions {
   command: string;
@@ -24,13 +24,7 @@ export function runCommand(options: RunOptions): Promise<RunResult> {
   const maxBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT;
   return new Promise((resolve) => {
     // npm/yarn/pnpm are .cmd shims on Windows, which only spawn through a shell.
-    const child = spawn(quoteForShell(options.command), options.args.map(quoteForShell), {
-      cwd: options.cwd,
-      env: options.env,
-      shell: isWindows,
-      detached: !isWindows,
-      windowsHide: true,
-    });
+    const child = spawnProcess(options);
 
     let output = "";
     let truncated = false;
@@ -60,6 +54,17 @@ export function runCommand(options: RunOptions): Promise<RunResult> {
     });
     child.on("close", (code) => finish(code));
   });
+}
+
+function spawnProcess(options: RunOptions): ChildProcess {
+  const common = { cwd: options.cwd, env: options.env, windowsHide: true };
+  // Windows: hand the shell one pre-quoted command line (passing args alongside `shell: true`
+  // is deprecated because Node would only concatenate them unescaped).
+  if (isWindows) {
+    const line = [options.command, ...options.args].map(quoteForShell).join(" ");
+    return spawn(line, { ...common, shell: true });
+  }
+  return spawn(options.command, options.args, { ...common, detached: true });
 }
 
 /** With `shell: true` on Windows, args are joined unquoted, so anything with spaces or metacharacters must be quoted. */

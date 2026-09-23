@@ -11,13 +11,15 @@ export interface PipelineInput {
   oldLockfile: string;
   newLockfile: string;
   manifest: RootManifest;
+  /** package.json as of the old lockfile; `npm ci` refuses a lockfile that disagrees with its manifest. */
+  oldPackageJson?: string;
   config: Config;
 }
 
 /** Everything that touches the network, disk or a sandbox; faked in tests. */
 export interface PipelineDeps {
   /** Installs the given lockfile in a sandbox and runs the project's tests. */
-  testLockfile(lockfileText: string): Promise<TestOutcome>;
+  testLockfile(lockfileText: string, packageJson?: string): Promise<TestOutcome>;
   /** Old lockfile with only `name` moved to `version`, installed and tested in a sandbox. */
   testDependencyAt(name: string, version: string): Promise<TestOutcome>;
   fetchChangelog(request: ChangelogRequest): Promise<ChangelogResult>;
@@ -80,7 +82,7 @@ async function explainFailure(
   signals: Signals[],
 ): Promise<Map<string, Outcome>> {
   const outcomes = new Map<string, Outcome>();
-  const baseline = await deps.testLockfile(input.oldLockfile);
+  const baseline = await deps.testLockfile(input.oldLockfile, input.oldPackageJson);
   if (baseline.status !== "passed" && "result" in baseline) {
     for (const s of signals) outcomes.set(s.change.path, { test: { status: "baseline-failing", result: baseline.result } });
     return outcomes;
