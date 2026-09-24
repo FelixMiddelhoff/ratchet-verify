@@ -154,4 +154,60 @@ export const cases = [
     expect: { overall: "safe", dependency: "rc-corpus-stealth", status: "safe", confidence: "reduced" },
     check: ({ exfil }) => (exfil && JSON.stringify(exfil).includes("hunter2-corpus-secret") ? "credential visible to the test run" : undefined),
   },
+
+  {
+    name: "debug 4.1.1 -> 4.3.4 (minor release with fixes, safe)",
+    source: "real",
+    bump: { name: "debug", old: "4.1.1", new: "4.3.4" },
+    files: {
+      "test.js": testScript(`
+        const debug = require("debug");
+        const log = debug("test");
+        if (typeof log !== "function") throw new Error("debug() broke");
+      `),
+    },
+    expect: { overall: "safe", dependency: "debug", status: "safe" },
+  },
+
+  {
+    name: "is-number 6.0.0 -> 7.0.0 (major release with API changes, risky)",
+    source: "real",
+    bump: { name: "is-number", old: "6.0.0", new: "7.0.0" },
+    files: {
+      "test.js": testScript(`
+        const isNumber = require("is-number");
+        if (isNumber(42) !== true) throw new Error("is-number(42) broke");
+        if (isNumber("42") !== false) throw new Error("is-number('42') broke");
+      `),
+    },
+    expect: { overall: "risky", dependency: "is-number", status: "risky" },
+  },
+
+  {
+    name: "yargs 15.4.1 -> 16.0.0 (major version, test passes with new API)",
+    source: "real",
+    bump: { name: "yargs", old: "15.4.1", new: "16.0.0" },
+    files: {
+      "test.js": testScript(`
+        const yargs = require("yargs/yargs");
+        const result = yargs(["--foo", "bar"]).option("foo", { type: "string" }).argv;
+        if (result.foo !== "bar") throw new Error("yargs parsing broke");
+      `),
+    },
+    expect: { overall: "safe", dependency: "yargs", status: "safe" },
+  },
+
+  {
+    name: "uuid 7.0.3 -> 8.0.0 (ESM transition and breaking changes)",
+    source: "real",
+    bump: { name: "uuid", old: "7.0.3", new: "8.0.0" },
+    files: {
+      "test.js": testScript(`
+        const uuid = require("uuid");
+        const v4 = uuid.v4();
+        if (!v4 || typeof v4 !== "string") throw new Error("uuid.v4() broke");
+      `),
+    },
+    expect: { overall: "risky", dependency: "uuid", status: "risky" },
+  },
 ];
