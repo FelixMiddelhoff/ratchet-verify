@@ -23,6 +23,7 @@ function renderVerdict(v: DependencyVerdict): string {
   const range = [v.oldVersion, v.newVersion].filter(Boolean).join(" -> ");
   const lines = [`${label.toUpperCase()}  ${v.name} ${range} (${v.direct ? "direct" : "transitive"})`, `  ${v.summary}`];
   for (const evidence of v.evidence) lines.push(...renderEvidence(evidence));
+  if (v.suggestion) lines.push(...suggestionText(v.suggestion));
   for (const caveat of v.caveats) lines.push(`  caveat: ${caveat}`);
   for (const note of v.notes) lines.push(`  note: ${note}`);
   return lines.join("\n");
@@ -60,4 +61,8 @@ const MAX_LISTED_NAMES = 6;
 function nameList(names: string[]): string {
   if (names.length <= MAX_LISTED_NAMES) return names.join(", ");
   return `${names.slice(0, MAX_LISTED_NAMES).join(", ")} and ${names.length - MAX_LISTED_NAMES} more`;
+}
+
+function suggestionText(s: NonNullable<DependencyVerdict["suggestion"]>): string[] {
+  return [`  last known good: ${s.version} (tested passing in this run)${s.command ? `; pin with: ${s.command}` : ""}`, "  later versions were not tested; they are not claimed broken"];
 }

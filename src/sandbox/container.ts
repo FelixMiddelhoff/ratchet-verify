@@ -29,20 +29,45 @@ const hostEnv = () => Object.fromEntries(Object.entries(process.env).filter((e):
 const probe = (runtime: ContainerRuntime, args: string[], exec: Exec, timeoutMs = PROBE_TIMEOUT_MS) =>
   exec({ command: runtime, args, cwd: process.cwd(), env: hostEnv(), timeoutMs });
 
-/** First working engine: docker, then podman (or only the preferred one). */
+export interface EngineDetection {
+  /** First engine that runs LINUX containers. */
+  usable?: { runtime: ContainerRuntime; rootless: boolean };
+  /** An engine that answered but is not in Linux-containers mode (e.g. docker on Windows runners). */
+  nonLinux?: ContainerRuntime;
+}
+
+/**
+ * First working engine: docker, then podman (or only the preferred one). Only engines running
+ * Linux containers count: the sandbox mounts /sandbox and pulls a Linux image. Docker must report
+ * OSType "linux" (missing or other value = rejected, conservatively); podman is always Linux.
+ */
+export async function detectEngine(preferred: ContainerRuntime | "auto" = "auto", exec: Exec = runCommand): Promise<EngineDetection> {
+  const candidates: ContainerRuntime[] = preferred === "auto" ? ["docker", "podman"] : [preferred];
+  const result: EngineDetection = {};
+  for (const runtime of candidates) {
+    const format = runtime === "docker" ? "{{.OSType}}|{{.SecurityOptions}}" : "{{.Host.Security.Rootless}}";
+    const info = await probe(runtime, ["info", "--format", format], exec);
+    if (info.exitCode !== 0) continue; // not installed, or the daemon isn't running
+    if (runtime === "docker") {
+      const [osType = "", ...rest] = info.output.trim().split("|");
+      if (osType.trim().toLowerCase() !== "linux") {
+        result.nonLinux ??= runtime;
+        continue;
+      }
+      result.usable = { runtime, rootless: /rootless/i.test(rest.join("|")) };
+    } else {
+      result.usable = { runtime, rootless: /true/i.test(info.output) };
+    }
+    return result;
+  }
+  return result;
+}
+
 export async function detectRuntime(
   preferred: ContainerRuntime | "auto" = "auto",
   exec: Exec = runCommand,
 ): Promise<{ runtime: ContainerRuntime; rootless: boolean } | undefined> {
-  const candidates: ContainerRuntime[] = preferred === "auto" ? ["docker", "podman"] : [preferred];
-  for (const runtime of candidates) {
-    const format = runtime === "docker" ? "{{.SecurityOptions}}" : "{{.Host.Security.Rootless}}";
-    const info = await probe(runtime, ["info", "--format", format], exec);
-    if (info.exitCode !== 0) continue; // not installed, or the daemon isn't running
-    const rootless = runtime === "docker" ? /rootless/i.test(info.output) : /true/i.test(info.output);
-    return { runtime, rootless };
-  }
-  return undefined;
+  return (await detectEngine(preferred, exec)).usable;
 }
 
 /** Pulls the image once, up front, so a slow first download isn't charged to an install timeout. */

@@ -79,6 +79,14 @@ Each entry has a `kind`:
 (then `lastGood < v <= firstBad`). `ambiguousWith` lists untestable versions in
 that window; `failingOutput` is the last 40 lines of the test output.
 
+**`suggestion`** (optional field on a verdict, not an evidence kind; absent
+otherwise): present only on a `broken` verdict whose bisection is `exact` and
+whose boundary re-run confirmed (or confirmation was disabled). `version` is the
+last version ratchet itself tested passing in this run; `command` (direct
+dependencies only) is `npm install name@version`. Later versions are untested,
+not claimed broken. Never set for narrowed, flaky (`unstable`), unconfirmed or
+unbisected results. The field is additive; `schemaVersion` stays `1`.
+
 **`test-failure`**: tests failed, but the failure isn't pinned to one version.
 `outcome` is `"failed"`, `"timed-out"` or `"install-failed"`; `output` is the
 last 40 lines; `bisectSkippedReason` may say why there was no bisection.

@@ -1,4 +1,4 @@
-import { DEFAULT_IMAGE, detectRuntime, ensureImage, type ContainerNetwork, type ContainerRuntime, type ContainerSettings, type Exec } from "./container.js";
+import { DEFAULT_IMAGE, detectEngine, ensureImage, type ContainerNetwork, type ContainerRuntime, type ContainerSettings, type Exec } from "./container.js";
 import { runCommand } from "./exec.js";
 import type { IsolationInfo } from "./sandbox.js";
 
@@ -25,8 +25,21 @@ export interface ResolvedIsolation {
 export async function resolveIsolation(choice: IsolationChoice, exec: Exec = runCommand): Promise<ResolvedIsolation> {
   if (choice.mode === "temp-dir") return { info: { level: "temp-dir" }, notes: [] };
 
-  const detected = await detectRuntime(choice.runtime, exec);
+  const { usable: detected, nonLinux } = await detectEngine(choice.runtime, exec);
   if (!detected) {
+    if (nonLinux) {
+      const why = `${nonLinux} is in Windows-containers mode, but ratchet needs Linux containers`;
+      if (choice.mode === "container") {
+        throw new Error(
+          `isolation "container": ${why}. Switch Docker Desktop to Linux containers ("Switch to Linux containers..." in the tray menu, ` +
+            `or run DockerCli.exe -SwitchLinuxEngine), use podman, or pass --isolation temp-dir to accept weaker isolation.`,
+        );
+      }
+      return {
+        info: { level: "temp-dir" },
+        notes: [`${why}: falling back to temp-dir isolation (install scripts can still read host files)`],
+      };
+    }
     if (choice.mode === "container") {
       throw new Error(
         `isolation "container" needs docker or podman, but no working engine was found (is the daemon running?). ` +
