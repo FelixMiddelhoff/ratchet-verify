@@ -5,6 +5,9 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+### Added
+- Bisector flaky detection (#8): the reported first-bad and last-good versions are re-run once each. A flipped result gives status `unstable` (verdict stays broken, reads "flaky suite: result not reliable", no exact culprit); inconclusive or unaffordable re-runs are marked unconfirmed. The 2 re-runs are reserved from `maxInstalls`, so total installs never exceed it. `BisectResult.confirmation`, `bisect(..., { confirm })`.
+
 ### Changed
 - Changelog fetcher: a pointer `CHANGELOG` file with no version headings (lodash) no longer ends the file search; more file-name variants tried (`Changelog.md`, `History.md`, `NEWS.md`, ...); changelogs kept in the GitHub wiki (`raw.githubusercontent.com/wiki/...`, lodash) are read as a last fallback; the rate-limit note now says to set `GITHUB_TOKEN`. Real-fetch finding: the debug "no changelog" report was unauthenticated GitHub rate limiting (60/h), not a missing changelog; is-number truly has none.
 - Removed `registry-url` from setup-node in release workflow (npm Trusted Publisher OIDC handles registry authentication).

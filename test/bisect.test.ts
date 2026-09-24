@@ -15,8 +15,99 @@ function probeWith(culprit: string, all: string[], unknown: string[] = []): Prob
   return Object.assign(fn, { calls });
 }
 
-const run = (all: string[], probe: Probe, maxInstalls?: number) =>
-  bisect({ availableVersions: ["1.0.0", ...all], oldVersion: "1.0.0", newVersion: all.at(-1)!, probe, maxInstalls });
+const run = (all: string[], probe: Probe, maxInstalls?: number, confirm = false) =>
+  bisect({ availableVersions: ["1.0.0", ...all], oldVersion: "1.0.0", newVersion: all.at(-1)!, probe, maxInstalls, confirm });
+
+/** Scripted probe: per-version queue of outcomes (last one repeats); default is the monotonic rule. */
+function scripted(culprit: string, all: string[], scripts: Record<string, ProbeOutcome[]>): Probe & { calls: string[] } {
+  const calls: string[] = [];
+  const fn: Probe = async (v) => {
+    calls.push(v);
+    const q = scripts[v];
+    if (q) return q.length > 1 ? q.shift()! : q[0]!;
+    return all.indexOf(v) >= all.indexOf(culprit) ? "fail" : "pass";
+  };
+  return Object.assign(fn, { calls });
+}
+
+test("confirmation: stable probe is confirmed and re-runs count toward installs", async () => {
+  for (let n = 1; n <= 12; n++) {
+    const all = versions(n);
+    for (const culprit of all) {
+      const probe = probeWith(culprit, all);
+      const r = await run(all, probe, 100, true);
+      assert.equal(r.status, "exact");
+      assert.equal(r.confirmation, "confirmed");
+      assert.equal(r.firstBad, culprit);
+      assert.equal(r.installs, r.log.length);
+      assert.equal(r.log.filter((s) => s.confirmation).length, 2);
+      assert.ok(r.installs <= Math.ceil(Math.log2(n)) + 2);
+    }
+  }
+});
+
+test("confirmation: first-bad that passes on re-run is unstable, never exact", async () => {
+  const all = versions(8);
+  const r = await run(all, scripted("1.5.0", all, { "1.5.0": ["fail", "pass"] }), 100, true);
+  assert.equal(r.status, "unstable");
+  assert.equal(r.confirmation, "flaky");
+});
+
+test("confirmation: last-good that fails on re-run is unstable", async () => {
+  const all = versions(8);
+  const r = await run(all, scripted("1.5.0", all, { "1.4.0": ["pass", "fail"] }), 100, true);
+  assert.equal(r.status, "unstable");
+});
+
+test("confirmation: boundary flip is caught for every culprit position", async () => {
+  for (let n = 2; n <= 10; n++) {
+    const all = versions(n);
+    for (const culprit of all) {
+      // The newest version is never probed during the search, so its first probe is the re-run.
+      const script: ProbeOutcome[] = culprit === all.at(-1) ? ["pass"] : ["fail", "pass"];
+      const r = await run(all, scripted(culprit, all, { [culprit]: script }), 100, true);
+      assert.equal(r.status, "unstable", `n=${n} culprit=${culprit}`);
+    }
+  }
+});
+
+test("confirmation: non-monotonic probe (later version passes) is flagged when boundary flips", async () => {
+  const all = versions(6);
+  // 1.3.0 fails, 1.4.0 passes: search may land on 1.3.0 but its neighbour re-run disagrees.
+  const r = await run(all, scripted("1.3.0", all, { "1.4.0": ["pass"], "1.3.0": ["fail", "fail"], "1.2.0": ["pass", "fail"] }), 100, true);
+  assert.equal(r.status, "unstable");
+});
+
+test("confirmation: unknown re-run is unconfirmed, not flaky", async () => {
+  const all = versions(4);
+  const r = await run(all, scripted("1.3.0", all, { "1.3.0": ["fail", "unknown"] }), 100, true);
+  assert.equal(r.status, "exact");
+  assert.equal(r.confirmation, "unconfirmed");
+});
+
+test("confirmation: total installs never exceed maxInstalls, at every budget", async () => {
+  const all = versions(30);
+  for (let budget = 0; budget <= 8; budget++) {
+    const r = await run(all, probeWith("1.17.0", all), budget, true);
+    assert.ok(r.installs <= budget, `budget=${budget} used ${r.installs}`);
+    assert.equal(r.installs, r.log.length);
+  }
+});
+
+test("confirmation: zero budget runs nothing and is unconfirmed", async () => {
+  const all = versions(1);
+  const r = await run(all, probeWith("1.1.0", all), 0, true);
+  assert.equal(r.installs, 0);
+  assert.equal(r.confirmation, "unconfirmed");
+});
+
+test("confirmation: narrowed result still confirms the failing edge and flags flip", async () => {
+  const all = versions(64);
+  const r = await run(all, scripted("1.40.0", all, {}), 4, true);
+  assert.equal(r.status, "narrowed");
+  const f = await run(all, scripted("1.40.0", all, { [r.firstBad]: ["fail", "pass"] }), 4, true);
+  assert.equal(f.status, "unstable");
+});
 
 test("finds the injected culprit at every position, within ceil(log2 n) installs", async () => {
   for (let n = 1; n <= 20; n++) {
@@ -97,6 +188,7 @@ test("prereleases between the endpoints are not probed", async () => {
     availableVersions: ["1.0.0", "1.1.0-beta.1", "1.1.0", "1.2.0"],
     oldVersion: "1.0.0",
     newVersion: "1.2.0",
+    confirm: false,
     probe: async (v) => {
       calls.push(v);
       return "pass";

@@ -79,7 +79,7 @@ test("broken with exact bisection: cites first bad, last good and failing output
   const v = judge(
     assessment({
       test: failed(),
-      bisect: { status: "exact", lastGood: "1.2.0", firstBad: "1.3.0", ambiguousWith: [], log: [], installs: 3 },
+      bisect: { status: "exact", confirmation: "confirmed", lastGood: "1.2.0", firstBad: "1.3.0", ambiguousWith: [], log: [], installs: 3 },
     }),
   );
   assert.equal(v.status, "broken");
@@ -88,11 +88,23 @@ test("broken with exact bisection: cites first bad, last good and failing output
   assert.ok(e?.kind === "bisect" && e.exact && e.failingOutput.includes("foo is not a function"));
 });
 
+test("broken with flaky boundary: stays broken, says flaky, claims no exact version", () => {
+  const v = judge(
+    assessment({
+      test: failed(),
+      bisect: { status: "unstable", confirmation: "flaky", lastGood: "1.2.0", firstBad: "1.3.0", ambiguousWith: [], log: [], installs: 4 },
+    }),
+  );
+  assert.equal(v.status, "broken");
+  assert.match(v.summary, /flaky suite: result not reliable/);
+  assert.ok(v.evidence[0]?.kind === "bisect" && !v.evidence[0].exact && v.evidence[0].unstable);
+});
+
 test("broken with bisection bound reached: narrowed range, not an exact claim", () => {
   const v = judge(
     assessment({
       test: failed(),
-      bisect: { status: "narrowed", lastGood: "1.2.0", firstBad: "1.9.0", ambiguousWith: [], log: [], installs: 10 },
+      bisect: { status: "narrowed", confirmation: "confirmed", lastGood: "1.2.0", firstBad: "1.9.0", ambiguousWith: [], log: [], installs: 10 },
     }),
   );
   assert.match(v.summary, /1\.2\.0 < v <= 1\.9\.0/);
