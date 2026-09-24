@@ -219,10 +219,10 @@ export const cases = [
     // TRUTH: safe for this usage. Manual run: require("uuid").v4() passes on 7.0.3 and 8.0.0. Upstream 8.0.0
     // breaking entries: (1) ESM default export removed, (2) deep requires like require("uuid/v4") removed.
     // This test uses neither (CJS main entry, named v4), so it is unaffected.
-    // FINDING: ratchet says risky/full (high-confidence call-site hit on symbol "v4" from the deep-require
-    // bullet, which only mentions the string "uuid/v4"). That is a false POSITIVE - allowed by policy rule 4,
-    // so it is pinned here as "risky" deliberately, not as truth. The true-broken variant is the next case.
-    name: "uuid 7.0.3 -> 8.0.0 (main-entry v4; ratchet over-flags, truth safe)",
+    // ratchet: safe/reduced (major bump). It used to over-flag risky/full because the deep-require bullet's
+    // "uuid/v4" matched the root member "v4"; the matcher now masks subpath tokens (PR #25). The true-broken
+    // variant is the next case.
+    name: "uuid 7.0.3 -> 8.0.0 (main-entry v4, truth safe)",
     source: "real",
     bump: { name: "uuid", old: "7.0.3", new: "8.0.0" },
     files: {
@@ -232,7 +232,7 @@ export const cases = [
         if (!v4 || typeof v4 !== "string") throw new Error("uuid.v4() broke");
       `),
     },
-    expect: { overall: "risky", dependency: "uuid", status: "risky" },
+    expect: { overall: "safe", dependency: "uuid", status: "safe", confidence: "reduced" },
   },
 
   {
