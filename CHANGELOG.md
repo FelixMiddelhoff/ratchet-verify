@@ -6,6 +6,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Last known-good suggestion (#14): an exact, confirmed bisection now suggests the last version ratchet tested passing, with `npm install name@x.y.z` for direct dependencies (text, Markdown PR comment, SARIF, and the optional JSON field `verdicts[].suggestion`; `schemaVersion` stays 1). Never shown for narrowed, flaky, unconfirmed or unbisected results.
 - yarn.lock support (#2), classic v1 and berry v2+: hand-written parser (`src/lockfile/yarn.ts`) into the same install-map shape; several ranges per entry, scoped names, `npm:` aliases (the real package is reported, direct via the alias name), and workspace/git/file/patch entries skipped. Several versions of one name are keyed per range so a bump still lines up. `--base` reads `yarn.lock` with `git show`; the lockfile is detected in the project (or from `--old`/`--new`).
 - `PackageManager` abstraction (`src/testrun/managers.ts`): frozen install (`yarn install --frozen-lockfile` / `--immutable`) and single-dependency probe (`yarn add name@ver --ignore-scripts` / `--mode=skip-build`) per manager, used by the isolation and bisect probes in `src/pipeline/real.ts`. A manager without a probe degrades to "not tested on its own", never a false safe. Ready for pnpm (#3).
 - Corpus: chalk 4.1.2 -> 5.3.0 through yarn classic (skipped when yarn is not installed).

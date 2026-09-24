@@ -26,7 +26,7 @@ export function renderSarif(report: Report): string {
 
 function resultsFor(v: DependencyVerdict): SarifResult[] {
   const title = `${v.name} ${[v.oldVersion, v.newVersion].filter(Boolean).join(" -> ")}`;
-  if (v.status === "broken") return [result("ratchet/broken", "error", `${title}: ${v.summary}`, "package.json", 1)];
+  if (v.status === "broken") return [result("ratchet/broken", "error", `${title}: ${v.summary}${v.suggestion ? `; last known good: ${v.suggestion.version} (tested passing)` : ""}`, "package.json", 1)];
 
   if (v.status === "risky") {
     const sites = v.evidence.flatMap((e) => (e.kind === "call-site" ? [e] : []));
