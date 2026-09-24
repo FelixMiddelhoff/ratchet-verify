@@ -109,7 +109,12 @@ function broken(base: PartialBase, a: DependencyAssessment, test: Extract<TestOu
     evidence.push({ kind: "test-failure", outcome: test.status, output, bisectSkippedReason: bisectSkippedReason(a) });
     summary = `${describeFailure(test.status)}; not isolated to a single version`;
   }
-  return { ...base, status: "broken", confidence: "full", summary, evidence };
+  const b = a.bisect;
+  const suggestion =
+    b && b.status === "exact" && (b.confirmation === "confirmed" || b.confirmation === "disabled")
+      ? { version: b.lastGood, ...(base.direct ? { command: `npm install ${base.name}@${b.lastGood}` } : {}) }
+      : undefined;
+  return { ...base, status: "broken", confidence: "full", summary, evidence, ...(suggestion ? { suggestion } : {}) };
 }
 
 type PartialBase = Pick<DependencyVerdict, "name" | "oldVersion" | "newVersion" | "direct" | "caveats" | "notes">;

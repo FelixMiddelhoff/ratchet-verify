@@ -5,6 +5,9 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+### Added
+- Last known-good suggestion (#14): an exact, confirmed bisection now suggests the last version ratchet tested passing, with `npm install name@x.y.z` for direct dependencies (text, Markdown PR comment, SARIF, and the optional JSON field `verdicts[].suggestion`; `schemaVersion` stays 1). Never shown for narrowed, flaky, unconfirmed or unbisected results.
+
 ## [0.3.0] - 2026-09-24
 
 ### Added
