@@ -28,6 +28,8 @@ export interface MatchInput {
   sites: UsageSite[];
   oldVersion: string;
   newVersion: string;
+  /** Bumped package name; lets the matcher tell `pkg/sub` deep-import mentions from member names. */
+  packageName?: string;
 }
 
 const CONFIDENCE_ORDER: Confidence[] = ["high", "medium", "low"];
@@ -48,8 +50,7 @@ export function matchBreakingChanges(input: MatchInput): MatchResult {
     const majorRelease = isMajorRelease(entry.version, input.oldVersion);
 
     for (const site of input.sites) {
-      if (site.symbol === "*" || site.symbol === "default") continue;
-      const hit = findMention(lines, site.symbol, majorRelease);
+      const hit = matchSite(lines, site, majorRelease, input.packageName);
       if (hit) hits.push({ ...hit, version: entry.version, site });
     }
   }
@@ -57,6 +58,35 @@ export function matchBreakingChanges(input: MatchInput): MatchResult {
   if (hasBreakingSections) hits.push(...wholeModuleHits(input, majorBoundary));
   hits.sort(byConfidenceThenVersion);
   return { hits, majorBoundary, hasBreakingSections };
+}
+
+/**
+ * A changelog token like `pkg/v4` names a deep import, not the member `v4`. Symbols inside such
+ * a subpath only match sites that import that very subpath; root-import member use never does
+ * (a subpath bullet says nothing about `require("pkg").v4`). Subpath sites also match the
+ * subpath string itself, so `require("pkg/v4")` stays a hit even without a named symbol.
+ */
+function matchSite(
+  lines: ClassifiedLine[],
+  site: UsageSite,
+  majorRelease: boolean,
+  packageName: string | undefined,
+): Pick<BreakingHit, "confidence" | "reason" | "excerpt"> | undefined {
+  const visible = packageName ? lines.map((l) => ({ ...l, text: maskSubpaths(l.text, packageName, site.subpath) })) : lines;
+  const named = site.symbol === "*" || site.symbol === "default" ? undefined : findMention(visible, site.symbol, majorRelease);
+  const deep = site.subpath ? findMention(lines, site.subpath, majorRelease) : undefined;
+  if (named && deep) return CONFIDENCE_ORDER.indexOf(named.confidence) <= CONFIDENCE_ORDER.indexOf(deep.confidence) ? named : deep;
+  return named ?? deep;
+}
+
+/** Blanks out `pkg/...` tokens other than `keep`, so their inner names can't match. */
+function maskSubpaths(text: string, packageName: string, keep: string | undefined): string {
+  const escaped = packageName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const token = new RegExp("(?<![\\w$@/.-])" + escaped + "(?:/[\\w$@.-]+)+", "g");
+  return text.replace(token, (m) => {
+    const trimmed = m.replace(/[.]+$/, "");
+    return trimmed === keep ? m : " ".repeat(m.length);
+  });
 }
 
 function findMention(

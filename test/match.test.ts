@@ -129,3 +129,26 @@ test("non-common symbol in bare prose keeps high confidence", () => {
   const [hit] = run([entry("2.0.0", "### Breaking Changes\n- frobnicate no longer accepts strings")], [site("frobnicate")]).hits;
   assert.equal(hit?.confidence, "high");
 });
+
+const DEEP = "### Breaking Changes\n- Deep requiring specific algorithms of this library like `require('uuid/v4')` is no longer supported.";
+const runPkg = (sites: UsageSite[]) =>
+  matchBreakingChanges({ entries: [entry("8.0.0", DEEP)], sites, oldVersion: "7.0.3", newVersion: "8.0.0", packageName: "uuid" });
+
+test("subpath bullet does not match member use on the root import", () => {
+  const member: UsageSite = { ...site("v4"), kind: "member-access" };
+  assert.equal(runPkg([member]).hits.length, 0);
+});
+
+test("subpath bullet still hits a site importing that subpath", () => {
+  const deep: UsageSite = { ...site("*"), kind: "require", subpath: "uuid/v4" };
+  const [hit] = runPkg([deep]).hits.filter((h) => h.site === deep);
+  assert.equal(hit?.confidence, "high");
+  const named: UsageSite = { ...site("v4"), kind: "require", subpath: "uuid/v4" };
+  assert.equal(runPkg([named]).hits[0]?.confidence, "high");
+});
+
+test("root member named in prose elsewhere still matches when subpath token is masked", () => {
+  const body = `${DEEP}\n- \`v4\` now returns a string`;
+  const [hit] = matchBreakingChanges({ entries: [entry("8.0.0", body)], sites: [site("v4")], oldVersion: "7.0.3", newVersion: "8.0.0", packageName: "uuid" }).hits;
+  assert.equal(hit?.confidence, "high");
+});

@@ -6,6 +6,7 @@ interface Binding {
   /** Default imports already produced a "default" site; namespaces fall back to "*" when unused. */
   isNamespace: boolean;
   hasMemberAccess: boolean;
+  specifier: string;
 }
 
 /** Sites into `packageName` (or one of its subpaths) found in one source file. */
@@ -78,7 +79,7 @@ class SourceScan {
   }
 
   private bind(local: ts.Identifier, node: ts.Node, isNamespace: boolean): void {
-    this.bindings.set(local.text, { line: this.lineOf(node), isNamespace, hasMemberAccess: false });
+    this.bindings.set(local.text, { line: this.lineOf(node), isNamespace, hasMemberAccess: false, specifier: this.currentSpecifier });
   }
 
   private onImportDeclaration(node: ts.ImportDeclaration): void {
@@ -179,7 +180,7 @@ class SourceScan {
     const binding = this.bindings.get(base);
     if (!binding) return;
     binding.hasMemberAccess = true;
-    this.currentSpecifier = this.packageName;
+    this.currentSpecifier = binding.specifier;
     this.add(at, member, "member-access");
   }
 
@@ -187,13 +188,15 @@ class SourceScan {
   private addUnusedNamespaceWildcards(): void {
     for (const binding of this.bindings.values()) {
       if (!binding.isNamespace || binding.hasMemberAccess) continue;
-      this.sites.push({
+      const site: UsageSite = {
         file: this.source.fileName,
         line: binding.line,
         symbol: "*",
         kind: "import",
         snippet: this.source.text.split("\n")[binding.line - 1]?.trim() ?? "",
-      });
+      };
+      if (binding.specifier !== this.packageName) site.subpath = binding.specifier;
+      this.sites.push(site);
     }
   }
 }
