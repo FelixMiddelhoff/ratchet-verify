@@ -1,5 +1,6 @@
 import { normalizeRepository, type GitHubRepo } from "./repo.js";
 import { parseChangelogSections } from "./sections.js";
+import { extractChangelogFiles, MAX_TARBALL_BYTES } from "./tarball.js";
 import { compareVersions, describeVersions, versionsInRange } from "./semver.js";
 
 export { describeVersions, normalizeRepository, parseChangelogSections, versionsInRange };
@@ -10,17 +11,20 @@ export type FetchLike = (url: string, init?: { headers?: Record<string, string> 
   status: number;
   json(): Promise<unknown>;
   text(): Promise<string>;
+  /** Needed only for the npm-tarball fallback; without it that source is skipped. */
+  arrayBuffer?(): Promise<ArrayBuffer>;
+  headers?: { get(name: string): string | null };
 }>;
 
 export interface ChangelogEntry {
   version: string;
   body: string;
-  origin: "github-release" | "changelog-file";
+  origin: "github-release" | "changelog-file" | "gitlab-release" | "tarball-file";
 }
 
 export interface ChangelogResult {
   /** "none" is a valid outcome: the verdict must say it is tests-only. */
-  source: "github-releases" | "changelog-file" | "both" | "none";
+  source: "github-releases" | "gitlab-releases" | "changelog-file" | "tarball-file" | "both" | "none";
   entries: ChangelogEntry[];
   /** In-range versions for which no notes were found anywhere. */
   missingVersions: string[];
@@ -48,32 +52,34 @@ export async function fetchChangelog(request: ChangelogRequest): Promise<Changel
 
   const packument = await getJson(http, registryUrl(request.name), {}, result.notes, "npm registry");
   if (!packument) return result;
-  const p = packument as { repository?: Parameters<typeof normalizeRepository>[0]; versions?: Record<string, unknown> };
+  const p = packument as { repository?: Parameters<typeof normalizeRepository>[0]; versions?: Record<string, { dist?: { tarball?: unknown } }> };
 
   result.availableVersions = Object.keys(p.versions ?? {});
   const wanted = versionsInRange(result.availableVersions, request.oldVersion, request.newVersion);
   result.repo = normalizeRepository(p.repository);
   result.missingVersions = wanted;
-  if (!result.repo) {
-    result.notes.push("No GitHub repository found in package metadata; no changelog can be fetched.");
-    return result;
-  }
+  const repo = result.repo;
+  if (!repo) result.notes.push("No supported repository (GitHub, GitLab, Bitbucket) found in package metadata.");
+  const host = repo?.host ?? "github";
+  const asEntries = (list: { version: string; body: string }[], origin: ChangelogEntry["origin"]) =>
+    addEntries(result, list.filter((s) => wanted.includes(s.version)).map((s) => ({ ...s, origin })));
 
-  const github = githubHeaders(request.githubToken);
-  const releases = await fetchReleases(http, result.repo, request.name, wanted, github, result.notes);
-  addEntries(result, releases.map((r) => ({ ...r, origin: "github-release" as const })));
-
-  if (result.missingVersions.length > 0) {
-    const sections = await fetchChangelogFile(http, result.repo, result.notes);
-    addEntries(result, sections.filter((s) => wanted.includes(s.version)).map((s) => ({ ...s, origin: "changelog-file" as const })));
+  // Priority: host releases > repo changelog file > GitHub wiki > file shipped in the npm tarball.
+  if (repo && host === "github") {
+    const releases = await fetchReleases(http, repo, request.name, wanted, githubHeaders(request.githubToken), result.notes);
+    asEntries(releases, "github-release");
+  } else if (repo && host === "gitlab") {
+    asEntries(await fetchGitLabReleases(http, repo, request.name, result.notes), "gitlab-release");
   }
+  if (repo && result.missingVersions.length > 0) asEntries(await fetchChangelogFile(http, repo, result.notes), "changelog-file");
+  if (repo && host === "github" && result.missingVersions.length > 0) asEntries(await fetchWikiChangelog(http, repo, result.notes), "changelog-file");
   if (result.missingVersions.length > 0) {
-    const wiki = await fetchWikiChangelog(http, result.repo, result.notes);
-    addEntries(result, wiki.filter((s) => wanted.includes(s.version)).map((s) => ({ ...s, origin: "changelog-file" as const })));
+    const tarball = p.versions?.[request.newVersion]?.dist?.tarball;
+    if (typeof tarball === "string") asEntries(await fetchTarballChangelog(http, tarball, result.notes), "tarball-file");
   }
 
   const origins = new Set(result.entries.map((e) => e.origin));
-  result.source = origins.size === 2 ? "both" : origins.has("github-release") ? "github-releases" : origins.has("changelog-file") ? "changelog-file" : "none";
+  result.source = origins.size >= 2 ? "both" : origins.has("github-release") ? "github-releases" : origins.has("gitlab-release") ? "gitlab-releases" : origins.has("changelog-file") ? "changelog-file" : origins.has("tarball-file") ? "tarball-file" : "none";
   if (result.missingVersions.length > 0) result.notes.push(`No notes found for ${describeVersions(result.missingVersions)}`);
   return result;
 }
@@ -165,7 +171,7 @@ async function fetchChangelogFile(
 ): Promise<{ version: string; body: string }[]> {
   const directory = repo.directory ? `${repo.directory}/` : "";
   for (const file of CHANGELOG_FILES) {
-    const url = `https://raw.githubusercontent.com/${repo.owner}/${repo.repo}/HEAD/${directory}${file}`;
+    const url = rawUrl(repo, directory, file);
     try {
       const response = await http(url);
       if (response.ok) {
@@ -196,6 +202,61 @@ async function fetchWikiChangelog(
     } catch (error) {
       notes.push(`wiki ${page} unreachable: ${(error as Error).message}`);
     }
+  }
+  return [];
+}
+
+function rawUrl(repo: GitHubRepo, directory: string, file: string): string {
+  if (repo.host === "gitlab") return `https://gitlab.com/${repo.owner}/${repo.repo}/-/raw/HEAD/${directory}${file}`;
+  if (repo.host === "bitbucket") return `https://bitbucket.org/${repo.owner}/${repo.repo}/raw/HEAD/${directory}${file}`;
+  return `https://raw.githubusercontent.com/${repo.owner}/${repo.repo}/HEAD/${directory}${file}`;
+}
+
+async function fetchGitLabReleases(
+  http: FetchLike,
+  repo: GitHubRepo,
+  packageName: string,
+  notes: string[],
+): Promise<{ version: string; body: string }[]> {
+  const project = encodeURIComponent(`${repo.owner}/${repo.repo}`);
+  const releases = (await getJson(http, `https://gitlab.com/api/v4/projects/${project}/releases?per_page=100`, {}, notes, "GitLab releases")) as
+    | { tag_name?: string; description?: string | null }[]
+    | undefined;
+  const found: { version: string; body: string }[] = [];
+  if (!Array.isArray(releases)) return found;
+  for (const release of releases) {
+    const version = release.tag_name ? versionFromTag(release.tag_name, packageName) : undefined;
+    if (version && release.description?.trim()) found.push({ version, body: release.description.trim() });
+  }
+  return found;
+}
+
+/** The tarball is untrusted input: size-capped, parsed in memory, never unpacked to disk or run. */
+async function fetchTarballChangelog(
+  http: FetchLike,
+  url: string,
+  notes: string[],
+): Promise<{ version: string; body: string }[]> {
+  if (!url.startsWith("https://")) return [];
+  try {
+    const response = await http(url);
+    if (!response.ok || !response.arrayBuffer) return [];
+    const length = Number(response.headers?.get("content-length") ?? 0);
+    if (length > MAX_TARBALL_BYTES) {
+      notes.push("npm tarball skipped: larger than the size cap.");
+      return [];
+    }
+    const files = extractChangelogFiles(new Uint8Array(await response.arrayBuffer()));
+    if (!files) {
+      notes.push("npm tarball skipped: unreadable or over the size cap.");
+      return [];
+    }
+    for (const file of files) {
+      const sections = parseChangelogSections(file.text);
+      if (sections.length > 0) return sections;
+    }
+  } catch (error) {
+    notes.push(`npm tarball unreachable: ${(error as Error).message}`);
   }
   return [];
 }

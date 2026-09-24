@@ -5,6 +5,9 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+### Added
+- Changelog sources (#7): GitLab (releases API + raw `CHANGELOG` files) and Bitbucket (raw files) repositories, and a changelog shipped in the npm tarball of the new version as the last fallback (also when the package has no supported repository). Priority: host releases, repo file, GitHub wiki, tarball; each fills only versions still missing, so `missingVersions` and the "no changelog" caveat stay accurate. The tarball is untrusted: https only, 20 MB download cap, 100 MB decompression cap, 1 MB per file, parsed in memory (root-level regular files only; `..`, absolute, nested and link entries ignored), never executed. Conventional-commit derived notes deliberately not added (noisy, low-trust, would mask the "no changelog" caveat).
+
 ## [0.3.0] - 2026-09-24
 
 ### Added

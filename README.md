@@ -214,8 +214,13 @@ machines either way. Details: [docs/configuration.md](docs/configuration.md#isol
   former.
 - **Private registries** that need `.npmrc` credentials can't authenticate
   inside the sandbox.
-- **GitHub-hosted changelogs only**: release notes or a `CHANGELOG.md` in a
-  GitHub repository.
+- **Changelog sources, in priority order**: host release notes (GitHub, or
+  GitLab releases API), then a `CHANGELOG`/`HISTORY`/`CHANGES` file in the
+  repository (GitHub, GitLab, Bitbucket raw files), then the GitHub wiki, then
+  a changelog file shipped in the npm tarball of the new version (read in
+  memory, size-capped, never executed). Each source only fills versions the
+  earlier ones missed. Self-hosted GitLab/Bitbucket and commit-derived notes
+  are not supported.
 
 ## FAQ
 
@@ -272,9 +277,8 @@ duplicate effort; small fixes can go straight to a pull request.
 - **Usage scanner depth** (`src/usage/`): follow re-exports through your own
   modules, respect name shadowing, handle `import()` chains and CommonJS
   patterns like `module.exports = require("pkg")`.
-- **More changelog sources.** GitLab and Bitbucket repositories, changelogs
-  shipped inside the npm tarball, and conventional-commit histories when no
-  notes exist (`src/changelog/`).
+- **More changelog sources.** Conventional-commit histories when no notes
+  exist (`src/changelog/`); GitLab, Bitbucket and tarball changelogs are done.
 - **Flaky-test handling in the bisector.** The bisector assumes "once broken,
   stays broken". Detect non-monotonic results, re-run a probe to confirm, and
   say so in the report (`src/bisect/`).
