@@ -66,6 +66,7 @@ async function gatherSignals(change: DependencyChange, deps: PipelineDeps): Prom
   const match = matchBreakingChanges({
     entries: changelog.entries,
     sites: usage.sites,
+    packageName: change.name,
     oldVersion: change.oldVersion ?? "0.0.0",
     newVersion: change.newVersion ?? "0.0.0",
   });

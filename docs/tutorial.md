@@ -57,7 +57,7 @@ Real output:
 RISKY  commander 8.3.0 -> 9.0.0 (direct)
   tests pass, but the changelog names 2 symbol uses in your code as breaking
   - cli.js:3  program.option("-d, --debug", "enable debug output");
-    changelog 9.0.0 (high): - *Breaking:* default value specified for boolean option now always used as default value (see .preset() to match some previous behaviours) (#1652)
+    changelog 9.0.0 (medium): - *Breaking:* default value specified for boolean option now always used as default value (see .preset() to match some previous behaviours) (#1652)
   - cli.js:4  program.parse(["node", "cli", "-d"]);
     changelog 9.0.0 (high): - *Breaking:* removed internal fallback to `require.main.filename` when script not known from arguments passed to `.parse()`
   caveat: major version bump: breaking changes are allowed even if the changelog does not list them
@@ -133,7 +133,7 @@ $ ratchet . --base HEAD
 RISKY  commander 8.3.0 -> 9.0.0 (direct)
   tests pass, but the changelog names 2 symbol uses in your code as breaking
   - cli.js:3  program.option("-d, --debug", "enable debug output");
-    changelog 9.0.0 (high): - *Breaking:* default value specified for boolean option now always used as default value (see .preset() to match some previous behaviours) (#1652)
+    changelog 9.0.0 (medium): - *Breaking:* default value specified for boolean option now always used as default value (see .preset() to match some previous behaviours) (#1652)
   - cli.js:4  program.parse(["node", "cli", "-d"]);
     changelog 9.0.0 (high): - *Breaking:* removed internal fallback to `require.main.filename` when script not known from arguments passed to `.parse()`
   caveat: major version bump: breaking changes are allowed even if the changelog does not list them
@@ -222,7 +222,7 @@ For the commander project `--markdown` prints:
 <details><summary><b>commander</b>: tests pass, but the changelog names 2 symbol uses in your code as breaking</summary>
 
 - `cli.js:3` `program.option("-d, --debug", "enable debug output");`
-  - changelog 9.0.0 (high confidence): - *Breaking:* default value specified for boolean option now always used as default value (see .preset() to match some previous behaviours) (#1652)
+  - changelog 9.0.0 (medium confidence): - *Breaking:* default value specified for boolean option now always used as default value (see .preset() to match some previous behaviours) (#1652)
 - `cli.js:4` `program.parse(["node", "cli", "-d"]);`
   - changelog 9.0.0 (high confidence): - *Breaking:* removed internal fallback to `require.main.filename` when script not known from arguments passed to `.parse()`
 - **caveat:** major version bump: breaking changes are allowed even if the changelog does not list them

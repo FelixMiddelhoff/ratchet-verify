@@ -101,3 +101,54 @@ test("no changelog entries: no hits, no breaking sections", () => {
   const result = run([], [site("foo")]);
   assert.deepEqual(result, { hits: [], majorBoundary: true, hasBreakingSections: false });
 });
+
+test("common word in bare prose of a breaking line: capped at medium, not dropped", () => {
+  const body = "### Breaking Changes\n- default value specified for boolean option now always used";
+  const [hit] = run([entry("2.0.0", body)], [site("option")]).hits;
+  assert.equal(hit?.confidence, "medium");
+  assert.match(hit!.reason, /common word/);
+});
+
+test("common word with code-style evidence stays high: backticks, .call form, call()", () => {
+  for (const line of ["- `option` removed", "- program.option is gone", "- option() now throws"]) {
+    const [hit] = run([entry("2.0.0", `### Breaking Changes\n- ${line}`)], [site("option")]).hits;
+    assert.equal(hit?.confidence, "high", line);
+  }
+});
+
+test("common word in bare prose of a major release, no breaking wording: not flagged", () => {
+  assert.deepEqual(run([entry("2.0.0", "- improved the option help text")], [site("option")]).hits, []);
+});
+
+test("common word in a removal note still matches (medium)", () => {
+  const [hit] = run([entry("1.5.0", "- removed the parse fallback")], [site("parse")], "1.0.0", "1.5.0").hits;
+  assert.equal(hit?.confidence, "medium");
+});
+
+test("non-common symbol in bare prose keeps high confidence", () => {
+  const [hit] = run([entry("2.0.0", "### Breaking Changes\n- frobnicate no longer accepts strings")], [site("frobnicate")]).hits;
+  assert.equal(hit?.confidence, "high");
+});
+
+const DEEP = "### Breaking Changes\n- Deep requiring specific algorithms of this library like `require('uuid/v4')` is no longer supported.";
+const runPkg = (sites: UsageSite[]) =>
+  matchBreakingChanges({ entries: [entry("8.0.0", DEEP)], sites, oldVersion: "7.0.3", newVersion: "8.0.0", packageName: "uuid" });
+
+test("subpath bullet does not match member use on the root import", () => {
+  const member: UsageSite = { ...site("v4"), kind: "member-access" };
+  assert.equal(runPkg([member]).hits.length, 0);
+});
+
+test("subpath bullet still hits a site importing that subpath", () => {
+  const deep: UsageSite = { ...site("*"), kind: "require", subpath: "uuid/v4" };
+  const [hit] = runPkg([deep]).hits.filter((h) => h.site === deep);
+  assert.equal(hit?.confidence, "high");
+  const named: UsageSite = { ...site("v4"), kind: "require", subpath: "uuid/v4" };
+  assert.equal(runPkg([named]).hits[0]?.confidence, "high");
+});
+
+test("root member named in prose elsewhere still matches when subpath token is masked", () => {
+  const body = `${DEEP}\n- \`v4\` now returns a string`;
+  const [hit] = matchBreakingChanges({ entries: [entry("8.0.0", body)], sites: [site("v4")], oldVersion: "7.0.3", newVersion: "8.0.0", packageName: "uuid" }).hits;
+  assert.equal(hit?.confidence, "high");
+});

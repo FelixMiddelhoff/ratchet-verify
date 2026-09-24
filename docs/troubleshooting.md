@@ -78,7 +78,7 @@ Semver allows breaking changes in a major release even when the notes don't
 list them. Your tests are the only evidence.
 
 **A `risky` hit that doesn't affect you**
-Matching is by identifier, so a common word (`option`, `parse`) can match a
+Matching is by identifier; a common word (`option`, `parse`) named only in prose is capped at medium. It can still match a
 breaking note about something else. Read the excerpt: it is shown next to your
 call site so you can judge in one glance. Packages you don't want judged at all
 can go in `ignore`.
