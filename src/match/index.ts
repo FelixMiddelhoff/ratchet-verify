@@ -28,6 +28,8 @@ export interface MatchInput {
   sites: UsageSite[];
   oldVersion: string;
   newVersion: string;
+  /** Bumped package name; lets the matcher tell `pkg/sub` deep-import mentions from member names. */
+  packageName?: string;
 }
 
 const CONFIDENCE_ORDER: Confidence[] = ["high", "medium", "low"];
@@ -48,8 +50,7 @@ export function matchBreakingChanges(input: MatchInput): MatchResult {
     const majorRelease = isMajorRelease(entry.version, input.oldVersion);
 
     for (const site of input.sites) {
-      if (site.symbol === "*" || site.symbol === "default") continue;
-      const hit = findMention(lines, site.symbol, majorRelease);
+      const hit = matchSite(lines, site, majorRelease, input.packageName);
       if (hit) hits.push({ ...hit, version: entry.version, site });
     }
   }
@@ -59,20 +60,58 @@ export function matchBreakingChanges(input: MatchInput): MatchResult {
   return { hits, majorBoundary, hasBreakingSections };
 }
 
+/**
+ * A changelog token like `pkg/v4` names a deep import, not the member `v4`. Symbols inside such
+ * a subpath only match sites that import that very subpath; root-import member use never does
+ * (a subpath bullet says nothing about `require("pkg").v4`). Subpath sites also match the
+ * subpath string itself, so `require("pkg/v4")` stays a hit even without a named symbol.
+ */
+function matchSite(
+  lines: ClassifiedLine[],
+  site: UsageSite,
+  majorRelease: boolean,
+  packageName: string | undefined,
+): Pick<BreakingHit, "confidence" | "reason" | "excerpt"> | undefined {
+  const visible = packageName ? lines.map((l) => ({ ...l, text: maskSubpaths(l.text, packageName, site.subpath) })) : lines;
+  const named = site.symbol === "*" || site.symbol === "default" ? undefined : findMention(visible, site.symbol, majorRelease);
+  const deep = site.subpath ? findMention(lines, site.subpath, majorRelease) : undefined;
+  if (named && deep) return CONFIDENCE_ORDER.indexOf(named.confidence) <= CONFIDENCE_ORDER.indexOf(deep.confidence) ? named : deep;
+  return named ?? deep;
+}
+
+/** Blanks out `pkg/...` tokens other than `keep`, so their inner names can't match. */
+function maskSubpaths(text: string, packageName: string, keep: string | undefined): string {
+  const escaped = packageName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const token = new RegExp("(?<![\\w$@/.-])" + escaped + "(?:/[\\w$@.-]+)+", "g");
+  return text.replace(token, (m) => {
+    const trimmed = m.replace(/[.]+$/, "");
+    return trimmed === keep ? m : " ".repeat(m.length);
+  });
+}
+
 function findMention(
   lines: ClassifiedLine[],
   symbol: string,
   majorRelease: boolean,
 ): Pick<BreakingHit, "confidence" | "reason" | "excerpt"> | undefined {
   const mention = mentionPattern(symbol);
+  const common = COMMON_WORDS.has(symbol.toLowerCase());
+  const strong = common ? strongPattern(symbol) : undefined;
   let softMatch: ClassifiedLine | undefined;
   let majorMatch: ClassifiedLine | undefined;
+  let weakMatch: ClassifiedLine | undefined;
 
   for (const line of lines) {
     if (!mention.test(line.text)) continue;
-    if (line.explicit) return { confidence: "high", reason: "named in a breaking-change section", excerpt: line.text };
-    if (line.soft) softMatch ??= line;
-    else majorMatch ??= line;
+    const weak = strong !== undefined && !strong.test(line.text);
+    if (line.explicit && !weak) return { confidence: "high", reason: "named in a breaking-change section", excerpt: line.text };
+    if (line.explicit) {
+      weakMatch ??= line; // never dropped: a breaking line may really be about this symbol
+    } else if (line.soft) softMatch ??= line;
+    else if (!weak) majorMatch ??= line;
+  }
+  if (weakMatch) {
+    return { confidence: "medium", reason: `common word "${symbol}" named in a breaking-change section without code-style evidence; may be about something else`, excerpt: weakMatch.text };
   }
   if (softMatch) return { confidence: "medium", reason: "named in a removal/rename/deprecation note", excerpt: softMatch.text };
   if (majorRelease && majorMatch) {
@@ -100,6 +139,22 @@ function mentionPattern(symbol: string): RegExp {
   const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   if (symbol.length <= SHORT_SYMBOL) return new RegExp("`[^`]*(?<![\\w$])" + escaped + "(?![\\w$])[^`]*`");
   return new RegExp("(?<![\\w$])" + escaped + "(?![\\w$])");
+}
+
+/**
+ * Words so common in prose that a bare mention is weak evidence. Code-style evidence (backticks,
+ * `.word`, `word(`) keeps full strength; without it confidence is capped, never dropped.
+ */
+const COMMON_WORDS = new Set([
+  "option", "options", "parse", "get", "set", "add", "remove", "use", "run", "create", "default", "value",
+  "name", "type", "help", "action", "command", "error", "format", "load", "read", "write", "start", "stop",
+  "then", "map", "filter", "list", "key", "keys", "data", "config", "version", "path", "file", "init", "on", "emit",
+]);
+
+function strongPattern(symbol: string): RegExp {
+  const e = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const id = "(?<![\\w$])" + e + "(?![\\w$])";
+  return new RegExp("`[^`]*" + id + "[^`]*`|\\." + e + "(?![\\w$])|(?<![\\w$])" + e + "\\(");
 }
 
 function majorOf(version: string): number {

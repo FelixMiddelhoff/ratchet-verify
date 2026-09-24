@@ -8,6 +8,9 @@ All notable changes to this project are documented here, in
 ### Changed
 - Removed `registry-url` from setup-node in release workflow (npm Trusted Publisher OIDC handles registry authentication).
 - Bumped `actions/setup-node` from v4 to v7 in GitHub Action.
+- Changelog matching (#5): common-word symbols (`option`, `parse`, `get`, ...) named only in bare prose are capped at medium confidence in breaking sections and no longer match plain lines of a major release. Backticks, `.symbol` and `symbol(` keep full strength. Nothing is dropped from breaking sections or removal notes.
+
+- Changelog matching: a `pkg/sub` deep-import token (e.g. `require('uuid/v4')`) no longer matches a root-import member of the same name (`require("uuid").v4`). It matches only sites importing that subpath, which stay high confidence; root-import use gets no hit from that bullet. Namespace sites from subpath imports now carry `subpath`.
 
 ## [0.2.0] - 2026-09-23
 
