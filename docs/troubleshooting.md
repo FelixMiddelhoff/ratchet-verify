@@ -67,6 +67,12 @@ bumps). The failing output is still shown.
 `maxInstalls` (default 10) ran out. Raise it in `.ratchetrc` for the exact
 version.
 
+**`broken, but flaky suite: result not reliable`**
+The re-run of the reported first bad or last good version gave the opposite
+result, so the suite is not deterministic and no exact version is claimed.
+Fix or quarantine the flaky test and run ratchet again. The re-runs use two
+of the `maxInstalls` budget.
+
 **`safe (partial)` and a caveat about the changelog**
 Tests passed, but there was nothing to check breaking changes against: no
 changelog was found, or some versions in the range have no notes. Many

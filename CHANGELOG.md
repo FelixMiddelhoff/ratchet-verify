@@ -5,6 +5,9 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+### Added
+- Bisector flaky detection (#8): the reported first-bad and last-good versions are re-run once each. A flipped result gives status `unstable` (verdict stays broken, reads "flaky suite: result not reliable", no exact culprit); inconclusive or unaffordable re-runs are marked unconfirmed. The 2 re-runs are reserved from `maxInstalls`, so total installs never exceed it. `BisectResult.confirmation`, `bisect(..., { confirm })`.
+
 ### Changed
 - Removed `registry-url` from setup-node in release workflow (npm Trusted Publisher OIDC handles registry authentication).
 - Bumped `actions/setup-node` from v4 to v7 in GitHub Action.

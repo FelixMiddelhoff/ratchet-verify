@@ -75,7 +75,9 @@ function evidence(e: Evidence): string[] {
       ];
     case "bisect":
       return [
-        `- bisected in ${e.installs} install${e.installs === 1 ? "" : "s"}: last good \`${e.lastGood}\`, ${e.exact ? "first bad" : "still failing at"} \`${e.firstBad}\``,
+        `- bisected in ${e.installs} install${e.installs === 1 ? "" : "s"}: last good \`${e.lastGood}\`, ${e.unstable ? "flaky, unreliable boundary" : e.exact ? "first bad" : "still failing at"} \`${e.firstBad}\``,
+        ...(e.unstable ? ["  - flaky suite: a boundary result flipped on re-run, so this is not an exact culprit"] : []),
+        ...(e.unconfirmed ? ["  - boundary not re-run to confirm (budget or inconclusive)"] : []),
         ...(e.ambiguousWith.length ? [`  - untestable versions in that window: ${e.ambiguousWith.map((v) => `\`${v}\``).join(", ")}`] : []),
         ...codeBlock(e.failingOutput),
       ];
