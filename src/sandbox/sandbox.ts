@@ -1,6 +1,7 @@
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+import { confinedPath } from "./confine.js";
 import { runInContainer, type ContainerSettings } from "./container.js";
 import { buildSandboxEnv, sandboxPaths } from "./env.js";
 import { runCommand, type RunResult } from "./exec.js";
@@ -32,6 +33,8 @@ export interface SandboxOptions {
   lockfile?: { name: string; content: string };
   /** Replaces the project's package.json, so an old lockfile is installed against its matching manifest. */
   packageJson?: string;
+  /** Project-relative files to overwrite (string) or delete (null) after the copy: the old state of workspace manifests. */
+  files?: Record<string, string | null>;
   /** Environment to filter; defaults to the real one. Exposed for tests. */
   sourceEnv?: NodeJS.ProcessEnv;
   /** Run installs and tests in a container instead of directly on the host. */
@@ -42,6 +45,7 @@ const NOT_COPIED = new Set(["node_modules", ".git"]);
 
 /** Teardown is a `finally`, so the temp dir is removed even when `work` throws. */
 export async function withSandbox<T>(options: SandboxOptions, work: (sandbox: Sandbox) => Promise<T>): Promise<T> {
+  for (const key of Object.keys(options.files ?? {})) confinedPath(join(tmpdir(), "x"), key); // refuse bad keys before creating anything
   const root = await mkdtemp(join(tmpdir(), "ratchet-sandbox-"));
   try {
     const dir = join(root, "project");
@@ -50,11 +54,54 @@ export async function withSandbox<T>(options: SandboxOptions, work: (sandbox: Sa
     await mkdir(paths.tmp, { recursive: true });
     await cp(options.projectDir, dir, { recursive: true, filter: (src) => !NOT_COPIED.has(basename(src)) });
     if (options.packageJson !== undefined) await writeFile(join(dir, "package.json"), options.packageJson);
+    for (const [file, content] of Object.entries(options.files ?? {})) await applyFile(dir, file, content);
     if (options.lockfile) await writeFile(join(dir, options.lockfile.name), options.lockfile.content);
 
     return await work(options.container ? containerSandbox(dir, root, options.container) : hostSandbox(dir, paths, options));
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Overwrites (string) or deletes (null) one project-relative file inside the sandbox copy. The key must stay
+ * inside the sandbox lexically AND after resolving links: the copy can contain symlinks/junctions to host paths.
+ */
+async function applyFile(dir: string, key: string, content: string | null): Promise<void> {
+  const target = confinedPath(dir, key);
+  const realDir = await realpath(dir);
+  const inside = (p: string): boolean => {
+    const rel = relative(realDir, p);
+    return rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+  };
+  if (content === null) {
+    if (await isLink(target)) return void (await rm(target, { force: true })); // removes the link itself only
+    const parent = await nearestExisting(dirname(target));
+    if (parent && !inside(await realpath(parent))) throw new Error(`sandbox file key "${key}" resolves outside the sandbox through a link: refusing to touch it`);
+    await rm(target, { force: true });
+    return;
+  }
+  await mkdir(dirname(target), { recursive: true });
+  if (!inside(await realpath(dirname(target))) || (await isLink(target))) throw new Error(`sandbox file key "${key}" resolves outside the sandbox through a link: refusing to write it`);
+  await writeFile(target, content);
+}
+
+async function isLink(path: string): Promise<boolean> {
+  try {
+    return (await lstat(path)).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+async function nearestExisting(path: string): Promise<string | undefined> {
+  for (let p = path; ; p = dirname(p)) {
+    try {
+      await lstat(p);
+      return p;
+    } catch {
+      if (dirname(p) === p) return undefined;
+    }
   }
 }
 

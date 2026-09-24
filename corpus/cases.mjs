@@ -276,4 +276,34 @@ export const cases = [
     },
     expect: { overall: "broken", dependency: "uuid", status: "broken", summary: /broken by 8\.0\.0/ },
   },
+
+  // Workspace projects (#4): the dependency is declared in packages/a; the root scripts.test runs its suite.
+  ...["npm", "yarn", "pnpm"].map((manager) => ({
+    name: `chalk 4.1.2 -> 5.3.0 in a workspace package via ${manager} (per-workspace pin + bisect)`,
+    source: "real",
+    manager,
+    workspace: true,
+    bump: { name: "chalk", old: "4.1.2", new: "5.3.0" },
+    files: {
+      "packages/a/test.js": testScript(`
+        const chalk = require("chalk");
+        if (typeof chalk.red("x") !== "string") throw new Error("chalk broke");
+      `),
+    },
+    expect: { overall: "broken", dependency: "chalk", status: "broken", summary: /broken by 5\.0\.0/, workspaces: ["@corpus/a"] },
+  })),
+
+  {
+    name: "lodash 4.17.20 -> 4.17.21 in a workspace package (safe, attribution)",
+    source: "real",
+    workspace: true,
+    bump: { name: "lodash", old: "4.17.20", new: "4.17.21" },
+    files: {
+      "packages/a/test.js": testScript(`
+        const _ = require("lodash");
+        if (_.chunk([1, 2, 3, 4], 2).length !== 2) throw new Error("chunk broke");
+      `),
+    },
+    expect: { overall: "safe", dependency: "lodash", status: "safe", workspaces: ["@corpus/a"] },
+  },
 ];

@@ -38,6 +38,8 @@ export interface DependencyVerdict {
   oldVersion?: string;
   newVersion?: string;
   direct: boolean;
+  /** Workspace projects only: which manifests declare it (`(root)` = root package.json) and which workspaces use it in code. */
+  workspaces?: { declared: string[]; used: string[] };
   status: VerdictStatus;
   confidence: VerdictConfidence;
   /** One line a human can read without opening the evidence. */

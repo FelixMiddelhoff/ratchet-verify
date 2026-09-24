@@ -10,9 +10,10 @@ import { realDeps } from "../pipeline/real.js";
 import { resolveIsolation, type ResolvedIsolation } from "../sandbox/index.js";
 import { renderJson, renderSarif, renderText, type Report } from "../report/index.js";
 import { parseCliArgs, USAGE, type OutputFormat } from "./args.js";
-import { readFileAtRef } from "./git.js";
+import { listFilesAtRef, readFileAtRef } from "./git.js";
 import { MANAGERS, managerByName, type ManagerSpec } from "../testrun/managers.js";
 import { packageVersion } from "./version.js";
+import { discoverWorkspacesDetailed, patternsFromTexts, selectWorkspaceDirs } from "../workspaces/index.js";
 
 
 export interface CliIo {
@@ -26,6 +27,7 @@ export interface DepsFactoryOptions {
   oldLockfile: string;
   manager: ManagerSpec["name"];
   oldPackageJson?: string;
+  oldFiles?: Record<string, string | null>;
   isolation: ResolvedIsolation;
 }
 
@@ -57,11 +59,17 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
     const manifest = JSON.parse(await readFile(join(projectDir, "package.json"), "utf8"));
     const oldPackageJson = await readOldPackageJson(args, projectDir);
 
+    const discovery = await discoverWorkspacesDetailed(projectDir);
+    for (const note of discovery.notes) io.err(`ratchet: ${note}`);
+    const workspaces = discovery.workspaces;
+    const oldFiles = await readOldWorkspaceManifests(args, projectDir, workspaces.map((w) => w.dir), oldPackageJson);
+
     const isolation = await resolveIsolation({ mode: config.isolation, runtime: config.containerRuntime, image: config.containerImage, network: config.containerNetwork });
     for (const note of isolation.notes) io.err(`ratchet: ${note}`);
 
-    const deps = (makeDeps ?? defaultDeps(config, io.env))({ projectDir, oldLockfile, manager: manager.name, oldPackageJson, isolation });
-    const report = await runPipeline({ oldLockfile, newLockfile, manifest, oldPackageJson, config }, deps);
+    const deps = (makeDeps ?? defaultDeps(config, io.env))({ projectDir, oldLockfile, manager: manager.name, oldPackageJson, oldFiles, isolation });
+    if (workspaces.length > 0) io.err(`ratchet: workspace project (${workspaces.length} packages); tests run via the root scripts.test only`);
+    const report = await runPipeline({ oldLockfile, newLockfile, manifest, workspaces, oldPackageJson, config }, deps);
 
     io.out(render(report, args.format));
     if (args.reportDir) await writeReports(resolve(args.reportDir), report);
@@ -114,6 +122,60 @@ async function readOldPackageJson(args: ReturnType<typeof parseCliArgs>, project
   if (args.oldPackageJson) return readFile(args.oldPackageJson, "utf8");
   if (!args.base) return undefined;
   return readFileAtRef(projectDir, args.base, "package.json");
+}
+
+/** What the old-state lookup needs from git; injectable so tests can simulate failures. */
+export interface GitReader {
+  list(): Promise<string[]>;
+  read(path: string): Promise<string>;
+}
+
+/**
+ * Workspace projects: the old lockfile only installs against the workspace manifests of its own time.
+ * --base: the workspaces are enumerated from the base ref itself (root `workspaces` in the old package.json and
+ * the old pnpm-workspace.yaml, matched against the base tree), so a workspace removed since is restored, one added
+ * since is deleted (`null`), and an old pnpm-workspace.yaml comes back too. A path is "absent" only when the base
+ * tree does not list it; every other git failure is an error, never an empty baseline.
+ * --old: the manifests come from `--old-workspace-package-json <dir>=<file>`; the file content is whatever the user
+ * chose (it is copied into the sandbox as that workspace's package.json), and <dir> must be a discovered workspace.
+ */
+export async function readOldWorkspaceManifests(
+  args: ReturnType<typeof parseCliArgs>,
+  projectDir: string,
+  dirs: string[],
+  oldPackageJson?: string,
+  reader: GitReader = { list: () => listFilesAtRef(projectDir, args.base!), read: (p) => readFileAtRef(projectDir, args.base!, p) },
+): Promise<Record<string, string | null> | undefined> {
+  const files: Record<string, string | null> = {};
+  if (args.base) {
+    const tree = await reader.list();
+    const inTree = new Set(tree);
+    const readTracked = async (path: string): Promise<string> => {
+      try {
+        return await reader.read(path);
+      } catch (error) {
+        throw new Error(`cannot read ${path} at ${args.base}: ${(error as Error).message}`);
+      }
+    };
+    const yaml = inTree.has("pnpm-workspace.yaml") ? await readTracked("pnpm-workspace.yaml") : undefined;
+    const { patterns } = patternsFromTexts(oldPackageJson, yaml);
+    const candidates = tree.filter((f) => f.endsWith("/package.json")).map((f) => f.slice(0, -"/package.json".length));
+    const baseDirs = selectWorkspaceDirs(patterns, candidates).dirs;
+    for (const dir of baseDirs) files[`${dir}/package.json`] = await readTracked(`${dir}/package.json`);
+    for (const dir of dirs) if (!baseDirs.includes(dir)) files[`${dir}/package.json`] = null;
+    if (yaml !== undefined) files["pnpm-workspace.yaml"] = yaml;
+    else if (existsSync(join(projectDir, "pnpm-workspace.yaml"))) files["pnpm-workspace.yaml"] = null;
+  } else if (args.oldWorkspacePackageJsons) {
+    for (const [dir, file] of Object.entries(args.oldWorkspacePackageJsons)) {
+      if (!dirs.includes(dir)) throw new Error(`--old-workspace-package-json ${dir}: not a discovered workspace directory (found: ${dirs.join(", ") || "none"})`);
+      try {
+        files[`${dir}/package.json`] = await readFile(file, "utf8");
+      } catch (error) {
+        throw new Error(`cannot read ${file} (for --old-workspace-package-json ${dir}): ${(error as Error).message}`);
+      }
+    }
+  }
+  return Object.keys(files).length > 0 ? files : undefined;
 }
 
 function render(report: Report, format: OutputFormat): string {

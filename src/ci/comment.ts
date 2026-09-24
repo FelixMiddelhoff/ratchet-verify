@@ -26,7 +26,7 @@ export function renderMarkdown(report: Report): string {
     if (members.length > 1) {
       lines.push(`| ${ICON[v.status]} | ${members.length} transitive dependencies | | ${cell(label(v))} |`);
     } else {
-      lines.push(`| ${ICON[v.status]} | \`${v.name}\`${v.direct ? "" : " (transitive)"} | ${range(v)} | ${cell(label(v))} |`);
+      lines.push(`| ${ICON[v.status]} | \`${v.name}\`${v.direct ? "" : " (transitive)"}${v.workspaces?.declared.length ? ` [${v.workspaces.declared.join(", ")}]` : ""} | ${range(v)} | ${cell(label(v))} |`);
     }
   }
   for (const { members } of groups) {

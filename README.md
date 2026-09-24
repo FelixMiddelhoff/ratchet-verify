@@ -211,9 +211,44 @@ machines either way. Details: [docs/configuration.md](docs/configuration.md#isol
   (`pnpm-lock.yaml`, 5.x/6.x/9.x) only.** For yarn and pnpm, git/file/link/workspace
   entries are skipped and several versions of one name are tracked per range
   (pnpm: per major, the root's own version keeps the plain path); pnpm peer-dependency
-  suffixes are stripped; pnpm workspaces are read through the root importer only;
-  Python and other ecosystems don't exist yet; monorepo
-  workspaces aren't understood.
+  suffixes are stripped; Python and other ecosystems don't exist yet.
+- **Workspaces (monorepos) are supported with limits.** ratchet reads
+  package.json `workspaces` (npm, yarn classic and berry) and
+  `pnpm-workspace.yaml`. A dependency is direct when *any* manifest (root or
+  workspace) names it, and each verdict lists which workspaces declare it and
+  which use it in source. The usage scan covers every workspace package. The
+  test run is the **root** `scripts.test` only: per-workspace test scripts are
+  not run, and a root without `scripts.test` is "risky (unverified)" even when
+  workspaces have tests. A single-dependency probe edits the one workspace that
+  declares the dependency (`npm -w <dir>`, `yarn workspace <name>`,
+  `pnpm --filter <name>` or `--filter ./<dir>` for an unnamed workspace); when
+  several manifests declare it, or a yarn workspace has no `name`, it is not
+  tested on its own. With `--base`, the workspaces of the base ref are
+  enumerated from git (old `workspaces` globs and old `pnpm-workspace.yaml`):
+  a removed workspace is restored (its `package.json`), an added one deleted.
+  With `--old` pass `--old-workspace-package-json <dir>=<file>` (`<dir>` must be
+  a discovered workspace; the file is whatever you choose, it becomes that
+  workspace's `package.json` in the sandbox), otherwise the baseline install
+  sees the current workspace manifests and may fail as "baseline-failing".
+  Workspace globs support literal paths, `*` and `**` (not brace sets);
+  patterns with `..`, absolute paths or drive letters, and directories that
+  resolve (via links) outside the project, are ignored with a note.
+- **Sandbox path confinement.** Files ratchet writes into the sandbox for the
+  old state (workspace manifests, `pnpm-workspace.yaml`) must stay inside the
+  sandbox: absolute paths, drive letters, UNC paths and `..` segments are
+  refused, and a link inside the project cannot redirect a write outside it.
+- **Usage scanner and aliases.** Re-exports are followed through relative
+  paths, tsconfig/jsconfig `compilerOptions.paths` and `baseUrl` (nearest and
+  parent configs, `extends`, comments and trailing commas), and workspace
+  package names (via `exports`, `module`/`main` with `dist` mapped to `src`,
+  or `src/index`). Anything that may hide a re-export but cannot be located (an
+  alias matching no scanned file, an unreadable or missing `extends`, a
+  workspace entry not found, `#imports`) is reported as unresolved and
+  downgrades "safe" to "safe (partial)". So do `.vue`, `.svelte`, `.astro` and
+  `.mdx` files (imports in them are never scanned: "file type not scanned")
+  and symlinked directories (not followed). Not evaluated: `include`/`exclude`,
+  `rootDirs`, bundler-only aliases (webpack/vite `resolve.alias`), which are
+  not seen as aliases at all.
 - **Changelog matching is by identifier**, so common words (`option`,
   `parse`) can match an unrelated breaking note. False positives cost a
   minute of review; a missed break costs an incident, and ratchet prefers the
@@ -272,8 +307,9 @@ duplicate effort; small fixes can go straight to a pull request.
 - **Registry-only egress for the install phase.** Tests already run offline in
   container mode; installs still have the whole network. An allowlisting proxy
   (issue #23 follow-up) would close that.
-- **Monorepo / workspaces.** Understand `workspaces`, run per-package test
-  scripts, and attribute a bump to the workspace that declares it.
+- **Per-workspace test scripts.** Workspaces are understood (see
+  Limitations) but only the root `scripts.test` runs; running each declaring
+  workspace's own script needs a verified per-manager form.
 
 ### Better detection
 

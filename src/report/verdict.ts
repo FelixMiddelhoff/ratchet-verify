@@ -16,6 +16,8 @@ export interface DependencyAssessment {
   match: MatchResult;
   /** Present only when this dependency was bisected. */
   bisect?: BisectResult;
+  /** Workspace projects: manifests declaring the dependency and workspaces whose sources use it. */
+  workspaces?: { declared: string[]; used: string[] };
 }
 
 const OUTPUT_TAIL_LINES = 40;
@@ -37,6 +39,7 @@ export function judge(a: DependencyAssessment): DependencyVerdict {
     oldVersion: a.change.oldVersion,
     newVersion: a.change.newVersion,
     direct: a.change.direct,
+    ...(a.workspaces ? { workspaces: a.workspaces } : {}),
     caveats: [] as string[],
     notes: [] as string[],
   };
@@ -76,7 +79,7 @@ export function judge(a: DependencyAssessment): DependencyVerdict {
 }
 
 const UNVERIFIED_REASON = {
-  "no-test-script": "package.json has no scripts.test, so nothing ran against this bump",
+  "no-test-script": "package.json has no scripts.test (only the root script is run, workspace scripts are not), so nothing ran against this bump",
   "no-lockfile": "no lockfile found for the sandbox install, so nothing ran against this bump",
   "baseline-failing": "the test suite already fails on the old lockfile, so this bump cannot be verified",
 };
@@ -168,7 +171,7 @@ function gatherGaps(a: DependencyAssessment, base: PartialBase): { caveats: stri
   }
   if ((a.usage.unresolved ?? []).length > 0) {
     caveats.push(
-      `usage scan incomplete: could not follow how ${(a.usage.unresolved ?? []).map((f) => `${f.file} (${f.reason})`).join(", ")} forward the package`,
+      `usage scan incomplete: could not fully scan or follow: ${(a.usage.unresolved ?? []).map((f) => `${f.file} (${f.reason})`).join(", ")}`,
     );
   }
   if (a.change.direct && a.usage.sites.length === 0 && !isRemoved) {

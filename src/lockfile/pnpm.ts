@@ -20,14 +20,13 @@ export function parsePnpmLock(text: string): InstalledPackages {
 
   const packages = asNode(root.packages);
   const snapshots = asNode(root.snapshots);
-  const importer = rootImporter(root);
-
-  // Which real package each root dependency (by its manifest name) points at.
-  const direct = new Map<string, { name: string; version: string }>();
-  for (const [depName, entry] of Object.entries(importer)) {
+  // Every importer (root + workspace packages) counts: a dependency any of them names is direct.
+  // Which real package each importer dependency (by its manifest name) points at.
+  const direct: { importer: string; depName: string; name: string; version: string }[] = [];
+  for (const [importer, depName, entry] of importerEntries(root)) {
     const raw = typeof entry === "string" ? entry : scalar(entry.version);
     const ref = raw === undefined ? undefined : parseRef(raw, depName, major);
-    if (ref) direct.set(depName, ref);
+    if (ref) direct.push({ importer, depName, ...ref });
   }
 
   const found = new Map<string, { name: string; version: string }>(); // "name@version"
@@ -43,20 +42,22 @@ export function parsePnpmLock(text: string): InstalledPackages {
   const perName = new Map<string, string[]>();
   for (const ref of found.values()) perName.set(ref.name, [...(perName.get(ref.name) ?? []), ref.version]);
   const aliasesFor = new Map<string, Set<string>>();
-  for (const [depName, ref] of direct) if (depName !== ref.name) aliasesFor.set(ref.name, (aliasesFor.get(ref.name) ?? new Set()).add(depName));
+  for (const { depName, ...ref } of direct) if (depName !== ref.name) aliasesFor.set(ref.name, (aliasesFor.get(ref.name) ?? new Set()).add(depName));
 
   const result: InstalledPackages = new Map();
   for (const ref of found.values()) {
     const versions = perName.get(ref.name)!;
-    // One version: npm-style path. Several: the one the root uses keeps the plain path, the rest are keyed by
-    // major so a patch/minor bump still lines up (a major bump of a nested copy shows as added+removed).
+    // One version: npm-style path. Several: the one the ROOT importer uses keeps the plain path, every other copy
+    // (workspace importers, transitive) is keyed by major so a patch/minor bump still lines up. Keying by full
+    // version would give a bumped copy a new path and it would show as removed+added, unattributed.
     let path = `node_modules/${ref.name}`;
     if (versions.length > 1) {
-      const rootUses = [...direct.values()].some((d) => d.name === ref.name && d.version === ref.version);
+      const rootUses = direct.some((d) => d.importer === "." && d.name === ref.name && d.version === ref.version);
       if (!rootUses) path = `node_modules/${ref.name}@${ref.version.split(".")[0]}`;
     }
     const aliases = [...(aliasesFor.get(ref.name) ?? [])];
-    result.set(uniquePath(result, path, ref.version), { name: ref.name, version: ref.version, ...(aliases.length ? { aliases } : {}) });
+    const importers = [...new Set(direct.filter((d) => d.name === ref.name && d.version === ref.version).map((d) => d.importer))];
+    result.set(uniquePath(result, path, ref.version), { name: ref.name, version: ref.version, ...(aliases.length ? { aliases } : {}), ...(importers.length ? { importers } : {}) });
   }
   return result;
 }
@@ -65,13 +66,18 @@ function uniquePath(result: InstalledPackages, path: string, version: string): s
   return result.has(path) ? `${path}#${version}` : path;
 }
 
-/** Root importer's dependencies merged: v9/workspace `importers['.']`, or the top-level v5/v6 sections. */
-function rootImporter(root: Node): Node {
+/**
+ * Dependencies of every importer, flattened: all `importers` entries (root `.` and workspace packages), or the
+ * top-level v5/v6 sections of a single-project lockfile. Same name in several importers = several entries.
+ */
+function importerEntries(root: Node): [string, string, Node | string][] {
   const importers = asNode(root.importers);
-  const source = importers["."] !== undefined ? asNode(importers["."]) : root;
-  const merged: Node = {};
-  for (const section of ["dependencies", "devDependencies", "optionalDependencies"]) Object.assign(merged, asNode(source[section]));
-  return merged;
+  const sources: [string, Node][] = Object.keys(importers).length > 0 ? Object.entries(importers).map(([k, v]) => [k, asNode(v)]) : [[".", root]];
+  const entries: [string, string, Node | string][] = [];
+  for (const [importer, source] of sources) {
+    for (const section of ["dependencies", "devDependencies", "optionalDependencies"]) for (const [dep, entry] of Object.entries(asNode(source[section]))) entries.push([importer, dep, entry]);
+  }
+  return entries;
 }
 
 /** `name@1.0.0(peer@1)`, `/name/1.0.0_peer@1` and friends -> registry name + version; undefined = not a registry package. */
