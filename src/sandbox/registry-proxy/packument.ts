@@ -66,7 +66,9 @@ export function plausibleTarballUrl(u: URL, name: string, version: string): bool
 
 export function canonicalTarballUrl(base: string, name: string, version: string): string {
   const bare = name.includes("/") ? (name.split("/")[1] as string) : name;
-  return `${base}/${name}/-/${bare}-${version}.tgz`;
+  // The version is a JSON key from the upstream document: nothing outside the semver alphabet may reach a URL path.
+  const safe = version.replace(/[^0-9A-Za-z.+-]/g, (c) => encodeURIComponent(c));
+  return `${base}/${name}/-/${bare}-${safe}.tgz`;
 }
 
 /**

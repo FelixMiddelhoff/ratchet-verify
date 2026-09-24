@@ -93,6 +93,8 @@ describe("packument rewriting: pure functions", () => {
 
   test("canonical url and weak etag / If-None-Match comparison", () => {
     assert.equal(canonicalTarballUrl("http://h", "@s/n", "1.0.0"), "http://h/@s/n/-/n-1.0.0.tgz");
+    assert.equal(canonicalTarballUrl("http://h", "n", "1.0.0+build.5"), "http://h/n/-/n-1.0.0+build.5.tgz");
+    assert.equal(canonicalTarballUrl("http://h", "n", "1.0.0/../../x?y#z"), "http://h/n/-/n-1.0.0%2F..%2F..%2Fx%3Fy%23z.tgz", "a hostile version key cannot add path segments, query or fragment");
     const e = weakEtag(Buffer.from("x"));
     assert.match(e, /^W\/"[0-9a-f]{40}"$/);
     assert.ok(etagMatches(e, e));
