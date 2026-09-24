@@ -83,7 +83,8 @@ of the `maxInstalls` budget.
 **`safe (partial)` and a caveat about the changelog**
 Tests passed, but there was nothing to check breaking changes against: no
 changelog was found, or some versions in the range have no notes. Many
-packages publish neither GitHub release notes nor a `CHANGELOG.md`. The
+packages publish no release notes, no repository `CHANGELOG.md` and none in
+the npm tarball (ratchet tries GitHub, GitLab, Bitbucket, then the tarball). The
 verdict is then exactly as strong as your tests.
 
 **`safe (partial)` and "major version bump"**
