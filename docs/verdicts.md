@@ -48,6 +48,10 @@ The verdict always carries proof:
 - **bisected** — the exact first failing version, the last passing version and
   the failing output. Untestable versions inside that window are listed as
   possible culprits.
+- **last known good** — for an exact, confirmed bisection the verdict also
+  suggests the last version ratchet tested passing (with an `npm install
+  name@x.y.z` pin for direct dependencies). Later versions are untested, not
+  claimed broken. Omitted for narrowed, flaky, unconfirmed or unbisected results.
 - **bisection bound reached** — the narrowed range
   (`last good < v <= still failing`) and the failing output, when
   `maxInstalls` ran out before one version was isolated.
