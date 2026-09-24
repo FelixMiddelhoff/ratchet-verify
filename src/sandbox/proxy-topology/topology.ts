@@ -5,7 +5,7 @@ import { DEFAULT_IMAGE, detectEngine, type ContainerSettings } from "../containe
 import type { AuditEntry } from "../registry-proxy/index.js";
 import { READY_PREFIX } from "../registry-proxy/index.js";
 import type { BuiltProxyConfig } from "./build-config.js";
-import { SIDECAR_PORT } from "./build-config.js";
+import { SIDECAR_PORT, withInternalSubnet } from "./build-config.js";
 import {
   networkCreateArgs, networkNameFor, proxyUrlFor, sidecarConnectArgs, sidecarCreateArgs, sidecarNameFor, sidecarStartArgs,
 } from "./commands.js";
@@ -135,8 +135,10 @@ export async function withProxyTopology<T>(options: TopologyOptions, fn: (topolo
 
     // 2. Internal network (explicit collision-safe subnet on docker, retry on conflict).
     const tn = now();
-    await createNetwork();
+    const internalCidr = await createNetwork();
     timings.networkMs = now() - tn;
+    // The sidecar binds only its address inside this subnet and only accepts clients from it: it is also on the default bridge.
+    const sidecarConfig = withInternalSubnet(config, internalCidr);
 
     // 3. Sidecar: create on the internal net, join the egress bridge, start attached with the config on STDIN only.
     const ts = now();
@@ -160,7 +162,7 @@ export async function withProxyTopology<T>(options: TopologyOptions, fn: (topolo
     let stdoutText = "";
     let stderrText = "";
     let readyPort: number | undefined;
-    client = engine.spawnAttached(sidecarStartArgs(sidecarName), config.stdinBlob);
+    client = engine.spawnAttached(sidecarStartArgs(sidecarName), sidecarConfig.stdinBlob);
     client.onStdoutLine((line) => {
       stdoutText = `${stdoutText}${line}\n`.slice(-4000);
       const m = new RegExp(`^${READY_PREFIX} port=(\\d+)$`).exec(line.trim());
@@ -259,7 +261,8 @@ export async function withProxyTopology<T>(options: TopologyOptions, fn: (topolo
   if (problems.length > 0) throw fail("teardown-failed", "teardown could not be verified: resources may be left behind", problems);
   return outcome.value;
 
-  async function createNetwork(): Promise<void> {
+  /** Creates the internal network and returns its IPv4 subnet (chosen explicitly on docker, read back from the engine on podman). */
+  async function createNetwork(): Promise<string> {
     const used: string[] = [];
     if (settings.runtime === "docker") {
       const ids = await run(["network", "ls", "-q"]);
@@ -272,7 +275,12 @@ export async function withProxyTopology<T>(options: TopologyOptions, fn: (topolo
       const subnet = settings.runtime === "docker" ? pickSubnet(used, options.random) : undefined;
       if (settings.runtime === "docker" && subnet === undefined) throw fail("network-create-failed", "no free subnet left in the private range 10.200.0.0/12 style pool");
       const r = await run(networkCreateArgs(settings.runtime, networkName, labels, subnet));
-      if (r.exitCode === 0) return;
+      if (r.exitCode === 0) {
+        if (subnet !== undefined) return subnet;
+        const read = subnetsFromInspect((await run(["network", "inspect", networkName])).output).find((s) => !s.includes(":"));
+        if (read === undefined) throw fail("network-create-failed", `could not determine the IPv4 subnet of ${networkName}: the proxy must bind its address on it`);
+        return read;
+      }
       last = r.output.trim();
       if (subnet !== undefined && SUBNET_CONFLICT_RE.test(last)) {
         used.push(subnet);

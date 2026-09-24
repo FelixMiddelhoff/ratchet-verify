@@ -4,7 +4,7 @@ import { buildRunArgs, type ContainerSettings } from "../../src/sandbox/containe
 import { Credential, secretForms } from "../../src/sandbox/registry-proxy/index.js";
 import {
   buildProxyConfig, cidrOverlap, decideSweep, judgeSelfTest, labelArgs, makeLabels, parseCidr, pickSubnet, ProxyTopologyError,
-  sweepStale, withProxyTopology, type ProxyConfigInput, type TopologyOptions,
+  sweepStale, withInternalSubnet, withProxyTopology, type ProxyConfigInput, type TopologyOptions,
 } from "../../src/sandbox/proxy-topology/index.js";
 import { FakeEngine, type FakeBehavior } from "./fake-engine.js";
 
@@ -68,6 +68,21 @@ describe("proxy-topology command construction", () => {
     assert.equal(e.commands.filter((c) => c.stdin !== undefined && c.stdin !== "").length, 1);
     assert.equal(topo.proxyUrl, `http://${topo.sidecarName}:3128`);
     assert.deepEqual(topo.sandboxNetworkArgs, ["--network", topo.networkName]);
+  });
+
+  test("threat: the sidecar binds only its internal-subnet address and accepts only that subnet (both engines)", async () => {
+    for (const runtime of ["docker", "podman"] as const) {
+      const e = new FakeEngine(runtime);
+      await withProxyTopology(opts(e), async () => {});
+      const netCreate = e.commands.find((c) => c.args[0] === "network" && c.args[1] === "create")!.args;
+      // docker picks the subnet itself; podman's is read back from `network inspect` (fake: 10.201.5.0/24)
+      const subnet = runtime === "docker" ? netCreate[netCreate.indexOf("--subnet") + 1]! : "10.201.5.0/24";
+      const blob = JSON.parse(e.commands.find((c) => c.kind === "attach")!.stdin!) as { listen: { cidr?: string; host?: string }; allowClients: string[] };
+      assert.equal(blob.listen.cidr, subnet, runtime);
+      assert.equal(blob.listen.host, undefined, "no fixed host: the proxy resolves its own address inside the subnet");
+      assert.deepEqual(blob.allowClients, [subnet], runtime);
+      assert.ok(!JSON.stringify(blob).includes("0.0.0.0"), "never a wildcard");
+    }
   });
 
   test("podman: internal only, default bridge is `podman`, rm -t 0", async () => {
@@ -162,7 +177,13 @@ describe("proxy-topology credential hygiene", () => {
     assert.equal(built.redact(`x ${CANARY} y`), "x [REDACTED] y");
     assert.throws(() => buildProxyConfig(input({ dns: [] })), /dns/);
     assert.throws(() => buildProxyConfig(input({ packages: { allowPrefixes: ["foo"] } })), /allowPrefixes/);
-    assert.equal(built.config.listen.host, "0.0.0.0");
+    assert.equal(built.config.listen.host, "127.0.0.1", "loopback placeholder until the internal subnet is known: fails closed");
+    assert.ok(!built.stdinBlob.includes("0.0.0.0"), "no wildcard listen address, ever");
+    const bound = withInternalSubnet(built, "10.201.5.0/24");
+    assert.equal(bound.config.listen.cidr, "10.201.5.0/24");
+    assert.equal(bound.config.allowClients.length, 1);
+    assert.ok(!bound.stdinBlob.includes("0.0.0.0"));
+    assert.ok(bound.stdinBlob.includes(CANARY), "the credential still only travels in the stdin blob");
   });
 });
 

@@ -163,8 +163,10 @@ describe("config validation (strict)", () => {
       packages: { allow: ["left-pad", "@scope/pkg", "Legacy_Name"], allowPrefixes: ["@bisect/", "tmp-"] },
       limits: { maxConcurrent: 4 },
       dns: ["1.1.1.1", "2606:4700:4700::1111"],
-      listen: { host: "0.0.0.0", port: 3128 },
+      listen: { cidr: "10.201.5.0/24", port: 3128 },
     });
+    assert.equal(cfg.listen.cidr, "10.201.5.0/24");
+    assert.equal(cfg.allowClients.length, 1, "the listen range doubles as the default client range");
     const r = cfg.registries[0] as RegistryConfig;
     assert.equal(r.upstreamOrigin, "https://registry.example.com:8443");
     assert.ok(r.isDefault);

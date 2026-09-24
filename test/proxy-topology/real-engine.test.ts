@@ -226,6 +226,26 @@ describe("proxy topology on a real engine", () => {
     });
   });
 
+  test("threat: a container on the default bridge cannot use the proxy on the sidecar's egress address; the sandbox on the internal net can", async (t) => {
+    await guarded(t, async (s, e) => {
+      const config = buildProxyConfig({ registries: [{ id: "main", upstream: "https://registry.example.invalid", credential: new Credential("bearer", CANARY) }], packages: { allow: ["left-pad"] }, dns: ["1.1.1.1"] });
+      await withProxyTopology({ settings: s, config, engine: e }, async (topo) => {
+        const inspected = await e.run(["inspect", "-f", "{{json .NetworkSettings.Networks}}", topo.sidecarName]);
+        const networks = JSON.parse(inspected.output.trim()) as Record<string, { IPAddress?: string }>;
+        const egress = Object.entries(networks).find(([name, n]) => name !== topo.networkName && n.IPAddress);
+        assert.ok(egress, `the sidecar has an egress-side address: ${inspected.output}`);
+        const probe = (name: string, network: string, host: string) =>
+          e.run(["run", "--rm", "--name", name, "--network", network, "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "node:24", "curl", "-s", "-m", "6", "-o", "/dev/null", "-w", "%{http_code}", `http://${host}:3128/left-pad`], { timeoutMs: 60_000 });
+        const fromDefaultBridge = await probe(`${topo.sidecarName}-egress`, egress![0], egress![1].IPAddress!);
+        assert.notEqual(fromDefaultBridge.exitCode, 0, `the proxy answered on the egress side: ${fromDefaultBridge.output}`);
+        assert.ok(!/^[1-5]\d\d$/.test(fromDefaultBridge.output.trim()), `an HTTP status came back on the egress side: ${fromDefaultBridge.output}`);
+        const fromSandboxNet = await probe(`${topo.sidecarName}-inner`, topo.networkName, topo.sidecarName);
+        assert.equal(fromSandboxNet.exitCode, 0, fromSandboxNet.output);
+        assert.match(fromSandboxNet.output.trim(), /^[1-5]\d\d$/, "the proxy answers on the internal network (any HTTP status)");
+      });
+    });
+  });
+
   test("a deliberately broken topology (sandbox on the default bridge) FAILS the self-test", async (t) => {
     await guarded(t, async (s, e) => {
       const config = buildProxyConfig({ registries: [{ id: "main", upstream: "https://registry.example.com", credential: new Credential("bearer", CANARY) }], dns: ["1.1.1.1"] });

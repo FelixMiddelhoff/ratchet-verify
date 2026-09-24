@@ -32,14 +32,14 @@ export interface NameResolver {
   resolve6?(hostname: string): Promise<string[]>;
 }
 
-function parseV4(s: string): number[] | undefined {
+export function parseV4(s: string): number[] | undefined {
   if (isIP(s) !== 4) return undefined;
   const parts = s.split(".").map(Number);
   return parts.length === 4 && parts.every((n) => Number.isInteger(n) && n >= 0 && n <= 255) ? parts : undefined;
 }
 
 /** Parses an IPv6 literal (no zone id) to 16 bytes. */
-function parseV6(s: string): number[] | undefined {
+export function parseV6(s: string): number[] | undefined {
   if (s.includes("%") || isIP(s) !== 6) return undefined;
   let text = s;
   const lastColon = text.lastIndexOf(":");

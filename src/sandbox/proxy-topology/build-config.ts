@@ -38,7 +38,7 @@ export interface BuiltProxyConfig {
 
 /**
  * Builds and validates the sidecar config. Validation is the proxy core's own `parseConfig` (closed-world). Errors name
- * config paths, never values. `listen` is fixed: 0.0.0.0:3128 (the default 127.0.0.1 is unreachable from the sandbox).
+ * config paths, never values. `listen` starts as a loopback placeholder; `withInternalSubnet` binds the real address.
  */
 export function buildProxyConfig(input: ProxyConfigInput): BuiltProxyConfig {
   const raw = {
@@ -55,7 +55,8 @@ export function buildProxyConfig(input: ProxyConfigInput): BuiltProxyConfig {
     discovery: input.discovery ?? "off",
     dns: [...input.dns],
     limits: input.limits ?? {},
-    listen: { host: "0.0.0.0", port: SIDECAR_PORT },
+    // Loopback placeholder: unreachable from the sandbox, so forgetting `withInternalSubnet` fails closed (self-test: sidecar unreachable).
+    listen: { host: "127.0.0.1", port: SIDECAR_PORT },
   };
   const stdinBlob = JSON.stringify(raw);
   let config: ProxyConfig;
@@ -66,4 +67,23 @@ export function buildProxyConfig(input: ProxyConfigInput): BuiltProxyConfig {
     throw new ProxyTopologyError("invalid-config", "invalid proxy config");
   }
   return Object.freeze({ stdinBlob, config, redact: createRedactor(configSecrets(config)) });
+}
+
+/**
+ * Binds the sidecar to its address inside the run's internal subnet (never a wildcard: the sidecar is also on the default
+ * bridge, whose side must not answer) and restricts clients to that subnet. Re-validated by the proxy core's `parseConfig`.
+ */
+export function withInternalSubnet(built: BuiltProxyConfig, cidr: string): BuiltProxyConfig {
+  const raw = JSON.parse(built.stdinBlob) as Record<string, unknown>;
+  raw.listen = { cidr, port: SIDECAR_PORT };
+  raw.allowClients = [cidr];
+  const stdinBlob = JSON.stringify(raw);
+  let config: ProxyConfig;
+  try {
+    config = parseConfig(JSON.parse(stdinBlob));
+  } catch (e) {
+    if (e instanceof ConfigError) throw new ProxyTopologyError("invalid-config", `invalid proxy config: ${e.message}`);
+    throw new ProxyTopologyError("invalid-config", "invalid proxy config");
+  }
+  return Object.freeze({ stdinBlob, config, redact: built.redact });
 }
