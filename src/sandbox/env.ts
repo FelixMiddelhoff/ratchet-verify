@@ -41,6 +41,28 @@ export function buildSandboxEnv(
     npm_config_update_notifier: "false",
     npm_config_fund: "false",
     npm_config_audit: "false",
+    ...packageManagerHomes(paths.home, join),
   });
   return env;
+}
+
+/**
+ * pnpm keeps its content-addressable store, metadata cache, state and (via XDG) config under the user's
+ * home or data dirs, and corepack keeps downloaded manager binaries; point every one of them into the
+ * sandbox so nothing reads the host's rc files or store and nothing persists past teardown. pnpm reads
+ * `npm_config_<setting>` variables like npm does.
+ */
+export function packageManagerHomes(home: string, join: (...parts: string[]) => string = (...p) => p.join("/")): Record<string, string> {
+  return {
+    XDG_CONFIG_HOME: join(home, ".config"),
+    XDG_CACHE_HOME: join(home, ".cache"),
+    XDG_DATA_HOME: join(home, ".local", "share"),
+    XDG_STATE_HOME: join(home, ".local", "state"),
+    PNPM_HOME: join(home, ".pnpm-home"),
+    npm_config_store_dir: join(home, ".pnpm-store"),
+    npm_config_cache_dir: join(home, ".pnpm-cache"),
+    npm_config_state_dir: join(home, ".pnpm-state"),
+    COREPACK_HOME: join(home, ".corepack"),
+    COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
+  };
 }

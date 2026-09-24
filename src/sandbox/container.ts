@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { packageManagerHomes } from "./env.js";
 import { runCommand, type RunOptions, type RunResult } from "./exec.js";
 
 export type ContainerRuntime = "docker" | "podman";
@@ -98,6 +99,7 @@ export function buildContainerEnv(): Record<string, string> {
     npm_config_update_notifier: "false",
     npm_config_fund: "false",
     npm_config_audit: "false",
+    ...packageManagerHomes(home),
   };
 }
 

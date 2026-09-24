@@ -24,7 +24,7 @@ an error, so a typo can't silently weaken a check.
 | `isolation` | `"temp-dir"` | `"temp-dir"`, `"container"` or `"auto"`. See below. `--isolation` overrides it. |
 | `containerRuntime` | `"auto"` | `"auto"` (docker, then podman), `"docker"` or `"podman"`. |
 | `containerNetwork` | `"tests-offline"` | Container mode only. `"tests-offline"`: the test phase runs with `--network none`. `"open"`: tests keep the network. `--network` overrides it. |
-| `containerImage` | `"node:24"` | Image the installs and tests run in. It must contain Node and npm (yarn or pnpm if your project uses them); the full `node` image has the build tools native modules need. |
+| `containerImage` | `"node:24"` | Image the installs and tests run in. It must contain Node and npm (yarn or pnpm if your project uses them; pnpm in container mode is untested); the full `node` image has the build tools native modules need. |
 
 ## Isolation
 
@@ -45,7 +45,7 @@ Notes for container mode:
 - Two runs per test: `npm ci` (network, so any registry from `.npmrc` works)
   in one container, then `npm test` in a fresh container on the same sandbox
   directory with `--network none`. Files installed persist between the two.
-  Bisection and single-dependency probes (`--package-lock-only`, `yarn add`) need the
+  Bisection and single-dependency probes (`--package-lock-only`, `yarn add`, `pnpm add --lockfile-only`) need the
   network and keep it. Install scripts are not run offline: many legitimately
   download binaries (esbuild, sharp), so `--ignore-scripts` plus an offline
   `npm rebuild` would break real projects; an allowlisting proxy is future work.

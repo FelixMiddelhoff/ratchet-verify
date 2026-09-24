@@ -25,8 +25,8 @@ for (const testCase of cases.filter((c) => !filter || c.name.includes(filter))) 
     console.log(`skip  ${testCase.name} (no container engine)`);
     continue;
   }
-  if (testCase.manager === "yarn" && spawnSync("yarn", ["--version"], { stdio: "ignore", shell: isWindows }).status !== 0) {
-    console.log(`skip  ${testCase.name} (yarn not installed)`);
+  if (testCase.manager && testCase.manager !== "npm" && spawnSync(testCase.manager, ["--version"], { stdio: "ignore", shell: isWindows }).status !== 0) {
+    console.log(`skip  ${testCase.name} (${testCase.manager} not installed)`);
     continue;
   }
   const started = Date.now();
@@ -64,8 +64,9 @@ async function runCase(testCase) {
     // Lockfile-only installs: nothing from the corpus runs on this machine outside ratchet's sandbox.
     // (yarn cases use classic `yarn install --ignore-scripts`; the node_modules it writes stay in this temp dir.)
     const yarn = testCase.manager === "yarn";
-    const lockName = yarn ? "yarn.lock" : "package-lock.json";
-    const relock = () => (yarn ? yarnInstall(dir) : npm(["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"], dir));
+    const pnpm = testCase.manager === "pnpm";
+    const lockName = yarn ? "yarn.lock" : pnpm ? "pnpm-lock.yaml" : "package-lock.json";
+    const relock = () => (yarn ? yarnInstall(dir) : pnpm ? pnpmLock(dir) : npm(["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"], dir));
 
     writeManifest(oldVersion);
     await relock();
@@ -119,6 +120,14 @@ function yarnInstall(cwd) {
   const argv = isWindows ? ["/d", "/s", "/c", "yarn install --ignore-scripts"] : ["install", "--ignore-scripts"];
   return new Promise((resolve, reject) => {
     execFile(command, argv, { cwd }, (error, _stdout, stderr) => (error ? reject(new Error(`yarn install failed: ${stderr.trim()}`)) : resolve()));
+  });
+}
+
+function pnpmLock(cwd) {
+  const command = isWindows ? "cmd.exe" : "pnpm";
+  const argv = isWindows ? ["/d", "/s", "/c", "pnpm install --lockfile-only --ignore-scripts"] : ["install", "--lockfile-only", "--ignore-scripts"];
+  return new Promise((resolve, reject) => {
+    execFile(command, argv, { cwd }, (error, _stdout, stderr) => (error ? reject(new Error(`pnpm install failed: ${stderr.trim()}`)) : resolve()));
   });
 }
 

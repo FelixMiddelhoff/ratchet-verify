@@ -136,5 +136,4 @@ test("manager specs: frozen install and single-dependency pin per flavor", () =>
   assert.deepEqual(yarn.pinDependency("a", "1.2.3", classic("1.0.0")), ["add", "a@1.2.3", "--ignore-scripts"]);
   assert.deepEqual(yarn.pinDependency("a", "1.2.3", berry("1.0.0")), ["add", "a@1.2.3", "--mode=skip-build"]);
   assert.deepEqual(managerByName("npm").frozenInstall(""), ["ci"]);
-  assert.equal(managerByName("pnpm").pinDependency("a", "1", ""), undefined);
 });

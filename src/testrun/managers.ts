@@ -3,7 +3,7 @@ import { detectYarnFlavor } from "../lockfile/yarn.js";
 export type PackageManager = "npm" | "yarn" | "pnpm";
 
 /**
- * What ratchet needs from a package manager. Adding one (pnpm, #3) means one more entry in
+ * What ratchet needs from a package manager. Adding one means one more entry in
  * MANAGERS; the pipeline, sandbox and test runner only talk to this interface.
  */
 export interface ManagerSpec {
@@ -25,9 +25,11 @@ export const MANAGERS: ManagerSpec[] = [
   {
     name: "pnpm",
     lockfile: "pnpm-lock.yaml",
-    supported: false,
+    supported: true,
     frozenInstall: () => ["install", "--frozen-lockfile"],
-    pinDependency: () => undefined,
+    // Rewrites just the lockfile (no node_modules, no scripts); pnpm re-resolves the named package's subtree
+    // and keeps the other locked entries. The real install afterwards runs with --frozen-lockfile.
+    pinDependency: (name, version) => ["add", `${name}@${version}`, "--lockfile-only", "--ignore-scripts"],
   },
   {
     name: "yarn",

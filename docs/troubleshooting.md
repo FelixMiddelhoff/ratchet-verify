@@ -16,13 +16,12 @@ with `fetch-depth: 0`, or `git fetch origin main` and use `--base origin/main`.
 The same message appears when the lockfile does not exist at that ref.
 
 **`no lockfile at …/package-lock.json: run `npm install` (or `yarn install`) to create one`**
-ratchet reads the project's `package-lock.json` or `yarn.lock`. Create it, or point at
+ratchet reads the project's `package-lock.json`, `yarn.lock` or `pnpm-lock.yaml`. Create it, or point at
 another file with `--new <file>`.
 
-**`found pnpm-lock.yaml, but pnpm lockfiles are not supported yet`**
-npm and yarn (classic and berry) lockfiles work; pnpm isn't diffed yet
-([help wanted](../README.md#help-wanted)). If you also keep a
-`package-lock.json` generated from the same `package.json`, ratchet can use it.
+**`Unsupported pnpm lockfile: lockfileVersion N is newer than ratchet knows (5-9)`**
+ratchet reads pnpm lockfileVersion 5.x, 6.x and 9.x. A newer format needs a parser update
+([help wanted](../README.md#help-wanted)).
 
 **`.ratchetrc: unknown option(s): ignor`**
 Unknown keys are rejected so a typo can't silently weaken a check. See
