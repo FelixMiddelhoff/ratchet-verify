@@ -13,6 +13,7 @@ import { parseCliArgs, USAGE, type OutputFormat } from "./args.js";
 import { readFileAtRef } from "./git.js";
 import { MANAGERS, managerByName, type ManagerSpec } from "../testrun/managers.js";
 import { packageVersion } from "./version.js";
+import { discoverWorkspaces } from "../workspaces/index.js";
 
 
 export interface CliIo {
@@ -61,7 +62,9 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
     for (const note of isolation.notes) io.err(`ratchet: ${note}`);
 
     const deps = (makeDeps ?? defaultDeps(config, io.env))({ projectDir, oldLockfile, manager: manager.name, oldPackageJson, isolation });
-    const report = await runPipeline({ oldLockfile, newLockfile, manifest, oldPackageJson, config }, deps);
+    const workspaces = await discoverWorkspaces(projectDir);
+    if (workspaces.length > 0) io.err(`ratchet: workspace project (${workspaces.length} packages); tests run via the root scripts.test only`);
+    const report = await runPipeline({ oldLockfile, newLockfile, manifest, workspaces, oldPackageJson, config }, deps);
 
     io.out(render(report, args.format));
     if (args.reportDir) await writeReports(resolve(args.reportDir), report);

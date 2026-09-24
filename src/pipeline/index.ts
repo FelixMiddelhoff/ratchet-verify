@@ -1,17 +1,21 @@
 import { bisect, type BisectResult, type ProbeOutcome } from "../bisect/index.js";
 import type { ChangelogRequest, ChangelogResult } from "../changelog/index.js";
 import type { Config } from "../config.js";
-import { diffLockfileTexts, type DependencyChange, type RootManifest } from "../lockfile/index.js";
+import { diffLockfileTexts, type DependencyChange, type RootManifest, type WorkspaceManifest } from "../lockfile/index.js";
 import { matchBreakingChanges } from "../match/index.js";
 import { buildReport, type DependencyAssessment, type Report } from "../report/index.js";
 import type { IsolationInfo } from "../sandbox/index.js";
+import type { PinScope } from "../testrun/managers.js";
 import type { TestOutcome } from "../testrun/index.js";
+import { workspaceOfFile } from "../workspaces/index.js";
 import type { UsageScan } from "../usage/index.js";
 
 export interface PipelineInput {
   oldLockfile: string;
   newLockfile: string;
   manifest: RootManifest;
+  /** Workspace packages (empty/absent = single package): a dependency is direct if any manifest names it. */
+  workspaces?: WorkspaceManifest[];
   /** package.json as of the old lockfile; `npm ci` refuses a lockfile that disagrees with its manifest. */
   oldPackageJson?: string;
   config: Config;
@@ -22,7 +26,7 @@ export interface PipelineDeps {
   /** Installs the given lockfile in a sandbox and runs the project's tests. */
   testLockfile(lockfileText: string, packageJson?: string): Promise<TestOutcome>;
   /** Old lockfile with only `name` moved to `version`, installed and tested in a sandbox. */
-  testDependencyAt(name: string, version: string): Promise<TestOutcome>;
+  testDependencyAt(name: string, version: string, scope?: PinScope): Promise<TestOutcome>;
   fetchChangelog(request: ChangelogRequest): Promise<ChangelogResult>;
   scanUsage(packageName: string): Promise<UsageScan>;
   /** What isolated the installs and tests; shown in every report. */
@@ -40,7 +44,7 @@ interface Signals {
 }
 
 export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Promise<Report> {
-  const changes = diffLockfileTexts(input.oldLockfile, input.newLockfile, input.manifest).filter(
+  const changes = diffLockfileTexts(input.oldLockfile, input.newLockfile, input.manifest, input.workspaces).filter(
     (c) => !input.config.ignore.includes(c.name),
   );
   if (changes.length === 0) return buildReport([], deps.isolation);
@@ -52,7 +56,7 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
     : new Map(signals.map((s) => [s.change.path, { test: overall }]));
 
   return buildReport(
-    signals.map((s) => ({ ...s, ...outcomes.get(s.change.path)! }) satisfies DependencyAssessment),
+    signals.map((s) => ({ ...s, ...outcomes.get(s.change.path)!, ...workspaceInfo(s, input.workspaces) }) satisfies DependencyAssessment),
     deps.isolation,
   );
 }
@@ -98,12 +102,12 @@ async function explainFailure(
   const culprits: string[] = [];
 
   for (const s of candidates) {
-    const test = lone ? overall : await deps.testDependencyAt(s.change.name, s.change.newVersion!);
+    const test = lone ? overall : await deps.testDependencyAt(s.change.name, s.change.newVersion!, pinScope(s.change, input.workspaces));
     if (test.status === "passed") {
       outcomes.set(s.change.path, { test });
     } else if (FAILURES.has(test.status) && test.status !== "install-failed") {
       culprits.push(s.change.name);
-      outcomes.set(s.change.path, { test, bisect: await bisectDependency(s, deps, input.config) });
+      outcomes.set(s.change.path, { test, bisect: await bisectDependency(s, deps, input.config, input.workspaces) });
     }
   }
 
@@ -123,6 +127,7 @@ async function bisectDependency(
   s: Signals,
   deps: PipelineDeps,
   config: Config,
+  workspaces?: WorkspaceManifest[],
 ): Promise<BisectResult | undefined> {
   if (s.changelog.availableVersions.length === 0) return undefined; // registry unreachable: nothing to search
   return bisect({
@@ -130,7 +135,7 @@ async function bisectDependency(
     oldVersion: s.change.oldVersion!,
     newVersion: s.change.newVersion!,
     maxInstalls: config.maxInstalls,
-    probe: async (version) => toProbeOutcome((await deps.testDependencyAt(s.change.name, version)).status),
+    probe: async (version) => toProbeOutcome((await deps.testDependencyAt(s.change.name, version, pinScope(s.change, workspaces))).status),
   });
 }
 
@@ -138,4 +143,21 @@ function toProbeOutcome(status: TestOutcome["status"]): ProbeOutcome {
   if (status === "passed") return "pass";
   if (status === "failed" || status === "timed-out") return "fail";
   return "unknown";
+}
+
+/** Which manifest a single-dependency move must edit. */
+function pinScope(change: DependencyChange, workspaces: WorkspaceManifest[] = []): PinScope | undefined {
+  if (workspaces.length === 0) return undefined;
+  const declared = change.declaredIn ?? [];
+  if (declared.length > 1) return { workspaceProject: true, ambiguous: true };
+  const owner = workspaces.find((w) => w.name === declared[0]);
+  return owner ? { workspaceProject: true, workspace: { name: owner.name, dir: owner.dir } } : { workspaceProject: true };
+}
+
+/** Which workspaces declare the dependency and which contain its call sites (workspace projects only). */
+function workspaceInfo(s: Signals, workspaces: WorkspaceManifest[] = []): Pick<DependencyAssessment, "workspaces"> {
+  if (workspaces.length === 0) return {};
+  const used = new Set<string>();
+  for (const site of s.usage.sites) used.add(workspaceOfFile(site.file, workspaces)?.name ?? "(root)");
+  return { workspaces: { declared: s.change.declaredIn ?? [], used: [...used].sort() } };
 }

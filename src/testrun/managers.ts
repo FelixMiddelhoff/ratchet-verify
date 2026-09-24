@@ -6,6 +6,16 @@ export type PackageManager = "npm" | "yarn" | "pnpm";
  * What ratchet needs from a package manager. Adding one means one more entry in
  * MANAGERS; the pipeline, sandbox and test runner only talk to this interface.
  */
+/** Where a dependency is declared, so a single-dependency move edits the right manifest of a workspace project. */
+export interface PinScope {
+  /** The project has workspaces: root-level add commands need the manager's "workspace root" flag. */
+  workspaceProject?: boolean;
+  /** The one workspace declaring the dependency; unset = the root manifest declares it. */
+  workspace?: { name: string; dir: string };
+  /** Several manifests declare it: one command cannot move them all consistently, so it is not tested alone. */
+  ambiguous?: boolean;
+}
+
 export interface ManagerSpec {
   name: PackageManager;
   lockfile: string;
@@ -18,7 +28,7 @@ export interface ManagerSpec {
    * pinned, without running install scripts. `undefined` = this manager has no way to do that, and the
    * caller must report "not tested on its own" instead of guessing.
    */
-  pinDependency(name: string, version: string, lockfileText: string): string[] | undefined;
+  pinDependency(name: string, version: string, lockfileText: string, scope?: PinScope): string[] | undefined;
 }
 
 export const MANAGERS: ManagerSpec[] = [
@@ -29,7 +39,12 @@ export const MANAGERS: ManagerSpec[] = [
     frozenInstall: () => ["install", "--frozen-lockfile"],
     // Rewrites just the lockfile (no node_modules, no scripts); pnpm re-resolves the named package's subtree
     // and keeps the other locked entries. The real install afterwards runs with --frozen-lockfile.
-    pinDependency: (name, version) => ["add", `${name}@${version}`, "--lockfile-only", "--ignore-scripts"],
+    // In a workspace project the target manifest is named: `--filter <pkg>` or `-w` (root).
+    pinDependency: (name, version, _text, scope) => {
+      if (scope?.ambiguous) return undefined;
+      const target = scope?.workspace ? ["--filter", scope.workspace.name] : scope?.workspaceProject ? ["-w"] : [];
+      return ["add", `${name}@${version}`, ...target, "--lockfile-only", "--ignore-scripts"];
+    },
   },
   {
     name: "yarn",
@@ -37,8 +52,14 @@ export const MANAGERS: ManagerSpec[] = [
     supported: true,
     frozenInstall: (text) => (detectYarnFlavor(text) === "berry" ? ["install", "--immutable"] : ["install", "--frozen-lockfile"]),
     // `yarn add` re-resolves only the named package (its own subtree) and keeps other locked entries.
-    pinDependency: (name, version, text) =>
-      detectYarnFlavor(text) === "berry" ? ["add", `${name}@${version}`, "--mode=skip-build"] : ["add", `${name}@${version}`, "--ignore-scripts"],
+    // Workspace projects: `yarn workspace <pkg> add`; classic needs `-W` to add to the root manifest.
+    pinDependency: (name, version, text, scope) => {
+      if (scope?.ambiguous) return undefined;
+      const berry = detectYarnFlavor(text) === "berry";
+      const flags = berry ? ["--mode=skip-build"] : ["--ignore-scripts"];
+      if (scope?.workspace) return ["workspace", scope.workspace.name, "add", `${name}@${version}`, ...flags];
+      return ["add", `${name}@${version}`, ...(scope?.workspaceProject && !berry ? ["-W"] : []), ...flags];
+    },
   },
   {
     name: "npm",
@@ -46,7 +67,10 @@ export const MANAGERS: ManagerSpec[] = [
     supported: true,
     frozenInstall: () => ["ci"],
     // Lock-file-only so npm resolves the dependency's own subtree; scripts stay off until the real install.
-    pinDependency: (name, version) => ["install", `${name}@${version}`, "--package-lock-only", "--ignore-scripts"],
+    pinDependency: (name, version, _text, scope) => {
+      if (scope?.ambiguous) return undefined;
+      return ["install", `${name}@${version}`, ...(scope?.workspace ? ["-w", scope.workspace.dir] : []), "--package-lock-only", "--ignore-scripts"];
+    },
   },
 ];
 

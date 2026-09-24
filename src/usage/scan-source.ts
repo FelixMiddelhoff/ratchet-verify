@@ -19,6 +19,8 @@ export interface ScanContext {
   resolve?: (specifier: string) => Forward | undefined;
   /** True when some project file forwards the package (makes computed require/import paths suspicious). */
   hasForwarders?: boolean;
+  /** Why a non-package specifier may still load project code that could not be located (path alias, workspace entry). */
+  unresolvable?: (specifier: string) => string | undefined;
 }
 
 export interface SourceAnalysis {
@@ -110,7 +112,10 @@ class SourceScan {
   private targetFor(specifier: string): Target | undefined {
     if (this.matches(specifier)) return { pkg: specifier };
     const fwd = this.ctx.resolve?.(specifier);
-    return fwd ? { fwd } : undefined;
+    if (fwd) return { fwd };
+    const why = this.ctx.unresolvable?.(specifier);
+    if (why) this.unresolved.push(why);
+    return undefined;
   }
 
   /** Package symbols reached by `name` on a module. */

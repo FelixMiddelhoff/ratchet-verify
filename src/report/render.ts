@@ -22,6 +22,7 @@ function renderVerdict(v: DependencyVerdict): string {
   const label = v.status === "safe" && v.confidence === "reduced" ? "safe (partial)" : v.status;
   const range = [v.oldVersion, v.newVersion].filter(Boolean).join(" -> ");
   const lines = [`${label.toUpperCase()}  ${v.name} ${range} (${v.direct ? "direct" : "transitive"})`, `  ${v.summary}`];
+  if (v.workspaces) lines.push(`  workspaces: ${describeWorkspaces(v.workspaces)}`);
   for (const evidence of v.evidence) lines.push(...renderEvidence(evidence));
   if (v.suggestion) lines.push(...suggestionText(v.suggestion));
   for (const caveat of v.caveats) lines.push(`  caveat: ${caveat}`);
@@ -65,4 +66,9 @@ function nameList(names: string[]): string {
 
 function suggestionText(s: NonNullable<DependencyVerdict["suggestion"]>): string[] {
   return [`  last known good: ${s.version} (tested passing in this run)${s.command ? `; pin with: ${s.command}` : ""}`, "  later versions were not tested; they are not claimed broken"];
+}
+
+export function describeWorkspaces(w: NonNullable<DependencyVerdict["workspaces"]>): string {
+  const declared = w.declared.length > 0 ? `declared in ${w.declared.join(", ")}` : "not declared in any manifest (transitive)";
+  return `${declared}; ${w.used.length > 0 ? `used in ${w.used.join(", ")}` : "no usage found in source"}`;
 }

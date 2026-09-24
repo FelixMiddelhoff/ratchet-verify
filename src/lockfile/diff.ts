@@ -1,11 +1,19 @@
-import type { DependencyChange, InstalledPackages, RootManifest } from "./types.js";
+import type { DependencyChange, InstalledPackages, RootManifest, WorkspaceManifest } from "./types.js";
 
+const ROOT_LABEL = "(root)";
+
+/**
+ * A dependency is direct when ANY manifest (root or workspace) names it: the root lockfile is shared, so a
+ * bump reaches every workspace that declares the package. A nested copy stays transitive, except a copy
+ * under `<workspace dir>/node_modules/<name>` (npm) when that workspace itself names the package.
+ */
 export function diffLockfiles(
   oldPackages: InstalledPackages,
   newPackages: InstalledPackages,
   manifest: RootManifest = {},
+  workspaces: WorkspaceManifest[] = [],
 ): DependencyChange[] {
-  const directNames = collectDirectNames(manifest);
+  const declarers = collectDeclarers(manifest, workspaces);
   const changes: DependencyChange[] = [];
 
   for (const [path, next] of newPackages) {
@@ -17,7 +25,7 @@ export function diffLockfiles(
       kind: previous ? "changed" : "added",
       oldVersion: previous?.version,
       newVersion: next.version,
-      direct: isDirect(path, next.name, directNames, next.aliases),
+      ...attribute(path, next.name, declarers, workspaces, next.aliases),
     });
   }
   for (const [path, previous] of oldPackages) {
@@ -27,27 +35,53 @@ export function diffLockfiles(
       path,
       kind: "removed",
       oldVersion: previous.version,
-      direct: isDirect(path, previous.name, directNames, previous.aliases),
+      ...attribute(path, previous.name, declarers, workspaces, previous.aliases),
     });
   }
   return changes.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-function collectDirectNames(manifest: RootManifest): Set<string> {
+/** dependency name -> labels of the manifests naming it. */
+function collectDeclarers(root: RootManifest, workspaces: WorkspaceManifest[]): Map<string, string[]> {
+  const declarers = new Map<string, string[]>();
+  const add = (label: string, m: RootManifest): void => {
+    for (const name of manifestNames(m)) declarers.set(name, [...(declarers.get(name) ?? []), label]);
+  };
+  add(ROOT_LABEL, root);
+  for (const w of workspaces) add(w.name, w.manifest);
+  return declarers;
+}
+
+function manifestNames(m: RootManifest): Set<string> {
   return new Set([
-    ...Object.keys(manifest.dependencies ?? {}),
-    ...Object.keys(manifest.devDependencies ?? {}),
-    ...Object.keys(manifest.optionalDependencies ?? {}),
-    ...Object.keys(manifest.peerDependencies ?? {}),
+    ...Object.keys(m.dependencies ?? {}),
+    ...Object.keys(m.devDependencies ?? {}),
+    ...Object.keys(m.optionalDependencies ?? {}),
+    ...Object.keys(m.peerDependencies ?? {}),
   ]);
 }
 
-/**
- * A nested copy (a/node_modules/b) is transitive even when the root also depends on `b`.
- * Yarn's flat lockfile has several versions of one name as `node_modules/b@<range>`; any of them
- * counts as direct when the root names `b` (over-flags rather than under-flags).
- */
-function isDirect(path: string, name: string, directNames: Set<string>, aliases: string[] = []): boolean {
-  if (![name, ...aliases].some((n) => directNames.has(n))) return false;
-  return path === `node_modules/${name}` || path.startsWith(`node_modules/${name}@`);
+function attribute(
+  path: string,
+  name: string,
+  declarers: Map<string, string[]>,
+  workspaces: WorkspaceManifest[],
+  aliases: string[] = [],
+): { direct: boolean; declaredIn?: string[] } {
+  const names = [name, ...aliases];
+  const labels = new Set<string>();
+  let direct = false;
+  // Yarn's flat lockfile has several versions of one name as `node_modules/b@<range>`; any of them counts as
+  // direct when a manifest names `b` (over-flags rather than under-flags).
+  if (path === `node_modules/${name}` || path.startsWith(`node_modules/${name}@`)) {
+    for (const n of names) for (const l of declarers.get(n) ?? []) labels.add(l);
+    direct = labels.size > 0;
+  } else {
+    const owner = workspaces.find((w) => path.startsWith(`${w.dir}/node_modules/`) && path.slice(w.dir.length + 1) === `node_modules/${name}`);
+    if (owner && names.some((n) => manifestNames(owner.manifest).has(n))) {
+      labels.add(owner.name);
+      direct = true;
+    }
+  }
+  return workspaces.length > 0 && direct ? { direct, declaredIn: [...labels] } : { direct };
 }

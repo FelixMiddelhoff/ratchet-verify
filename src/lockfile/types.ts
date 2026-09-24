@@ -17,6 +17,8 @@ export interface DependencyChange {
   oldVersion?: string;
   newVersion?: string;
   direct: boolean;
+  /** Workspaces (package names, `(root)` for the root manifest) whose manifest names this dependency; set only for workspace projects. */
+  declaredIn?: string[];
 }
 
 export interface RootManifest {
@@ -24,4 +26,13 @@ export interface RootManifest {
   devDependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
+}
+
+/** One workspace package's manifest, for per-workspace direct/transitive attribution. */
+export interface WorkspaceManifest {
+  /** Package name from its package.json (directory when unnamed). */
+  name: string;
+  /** Project-relative directory, forward slashes. */
+  dir: string;
+  manifest: RootManifest;
 }

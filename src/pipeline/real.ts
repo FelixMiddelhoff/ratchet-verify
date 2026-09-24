@@ -30,9 +30,9 @@ export function realDeps(options: RealDepsOptions): PipelineDeps {
         installAndTest(sandbox, { testTimeoutMs: config.testTimeoutMs }),
       ),
 
-    testDependencyAt: (name, version) =>
+    testDependencyAt: (name, version, scope) =>
       withSandbox({ projectDir, container, packageJson: options.oldPackageJson, lockfile: { name: manager.lockfile, content: options.oldLockfile } }, async (sandbox): Promise<TestOutcome> => {
-        const args = manager.pinDependency(name, version, options.oldLockfile);
+        const args = manager.pinDependency(name, version, options.oldLockfile, scope);
         // No safe single-dependency move for this manager: report it instead of guessing a verdict.
         // (install-failed makes the pipeline skip it: never cleared, never blamed on this dependency alone.)
         if (!args) {
