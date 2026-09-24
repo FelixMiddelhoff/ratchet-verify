@@ -57,8 +57,9 @@ RISKY  commander 8.3.0 -> 9.0.0 (direct)
 ## Quick start
 
 Requirements: Node.js 24 or newer, git, and a project with a `package-lock.json`
-(npm, lockfile version 1, 2 or 3) or a `yarn.lock` (yarn classic v1 or berry
-v2+), plus that package manager on PATH. pnpm is not supported yet.
+(npm, lockfile version 1, 2 or 3), a `yarn.lock` (yarn classic v1 or berry
+v2+) or a `pnpm-lock.yaml` (pnpm lockfileVersion 5.x, 6.x or 9.x), plus that
+package manager on PATH.
 
 ```
 npm install -g ratchet-verify        # or run it with: npx ratchet-verify
@@ -66,7 +67,7 @@ cd /path/to/your/project             # a git repo with the bump applied
 ratchet-verify . --base main         # the short alias `ratchet` works too
 ```
 
-`--base main` compares the working tree's `package-lock.json` (or `yarn.lock`)
+`--base main` compares the working tree's `package-lock.json` (or `yarn.lock` / `pnpm-lock.yaml`)
 with the one on `main`. Exit code `0` means ok, `1` means a verdict at or above
 `--fail-on` (default `broken`), `2` means a usage or runtime error.
 
@@ -129,7 +130,7 @@ Details and every caveat: [docs/verdicts.md](docs/verdicts.md).
 ```
 ratchet-verify [project-dir] (--base <git-ref> | --old <lockfile>) [options]
 
-  --base <ref>        compare against the lockfile (package-lock.json or yarn.lock) at this git ref
+  --base <ref>        compare against the lockfile (package-lock.json, yarn.lock or pnpm-lock.yaml) at this git ref
   --old <file>        compare against this lockfile instead of a git ref
   --old-package-json <file>  package.json that goes with --old
   --new <file>        lockfile with the proposed bump (default: project's)
@@ -206,9 +207,11 @@ machines either way. Details: [docs/configuration.md](docs/configuration.md#isol
   full-confidence "safe", and the sandbox at least withholds your credentials.
 - **Only as good as your tests.** No `scripts.test` means "risky
   (unverified)", never "safe".
-- **npm (`package-lock.json`) and yarn (`yarn.lock`, classic and berry)
-  only.** pnpm lockfiles are not diffed; for yarn, git/file/workspace
-  entries are skipped and several versions of one name are tracked per range;
+- **npm (`package-lock.json`), yarn (`yarn.lock`, classic and berry) and pnpm
+  (`pnpm-lock.yaml`, 5.x/6.x/9.x) only.** For yarn and pnpm, git/file/link/workspace
+  entries are skipped and several versions of one name are tracked per range
+  (pnpm: per major, the root's own version keeps the plain path); pnpm peer-dependency
+  suffixes are stripped; pnpm workspaces are read through the root importer only;
   Python and other ecosystems don't exist yet; monorepo
   workspaces aren't understood.
 - **Changelog matching is by identifier**, so common words (`option`,
@@ -236,10 +239,14 @@ installs and tests inside a temporary copy that is deleted afterwards.
 
 **Which package manager runs the install?** The one that owns your lockfile:
 `npm ci`, `yarn install --frozen-lockfile` (classic) or `yarn install --immutable`
-(berry), then your own `scripts.test`. The yarn version must be on PATH (berry
-projects that commit `.yarn/releases` use it via `yarnPath`). Single-dependency
-probes (used to isolate and bisect a failure) use `npm install name@ver
---package-lock-only`, or `yarn add name@ver --ignore-scripts` / `--mode=skip-build`.
+(berry), or `pnpm install --frozen-lockfile`, then your own `scripts.test`. The yarn or
+pnpm version must be on PATH (berry projects that commit `.yarn/releases` use it via
+`yarnPath`). Single-dependency probes (used to isolate and bisect a failure) use
+`npm install name@ver --package-lock-only`, `yarn add name@ver --ignore-scripts` /
+`--mode=skip-build`, or `pnpm add name@ver --lockfile-only --ignore-scripts`. pnpm's
+store, caches, config and state are redirected into the sandbox like npm's. Container
+mode with pnpm is untested: it needs `containerImage` to provide pnpm (the default
+`node:24` image does not put it on PATH).
 A manager without such a probe is reported as "not tested on its own", never as safe.
 
 **Will it call an outdated dependency "broken"?** Only when the tests fail
@@ -265,10 +272,6 @@ duplicate effort; small fixes can go straight to a pull request.
 - **Registry-only egress for the install phase.** Tests already run offline in
   container mode; installs still have the whole network. An allowlisting proxy
   (issue #23 follow-up) would close that.
-- **pnpm lockfile support (#3).** Parse `pnpm-lock.yaml` into the same
-  `InstalledPackages` shape (yarn is done; see `src/lockfile/yarn.ts`) and fill in
-  the pnpm entry of `MANAGERS` in `src/testrun/managers.ts`. *Done when:* fixtures
-  diff correctly, direct vs transitive flag included.
 - **Monorepo / workspaces.** Understand `workspaces`, run per-package test
   scripts, and attribute a bump to the workspace that declares it.
 

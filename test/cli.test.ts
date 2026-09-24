@@ -138,11 +138,6 @@ test("missing lockfile: explains what is supported instead of ENOENT", async () 
     assert.equal(await runCli([dir, "--old", join(dir, "old.json")], io, fakeDeps("passed")), 2);
     assert.match(err[0]!, /no lockfile at .*npm install/);
   });
-  await withTempProject({ "package.json": pkg({}), "old.json": lock("1.0.0"), "pnpm-lock.yaml": "" }, async (dir) => {
-    const { io, err } = capture();
-    assert.equal(await runCli([dir, "--old", join(dir, "old.json")], io, fakeDeps("passed")), 2);
-    assert.match(err[0]!, /found pnpm-lock\.yaml, but only package-lock\.json and yarn\.lock are supported/);
-  });
 });
 
 test("--version prints the package version", async () => {
@@ -175,10 +170,48 @@ test("yarn.lock project: lockfile detected, base read with git show, manager pas
   });
 });
 
-test("pnpm lockfile alone is refused with a clear message", async () => {
-  await withTempProject({ "package.json": pkg({}), "pnpm-lock.yaml": "" }, async (dir) => {
-    const { io, err } = capture();
-    assert.equal(await runCli([dir, "--base", "HEAD"], io, fakeDeps("passed")), 2);
-    assert.match(err[0]!, /pnpm lockfiles are not supported yet/);
+const pnpmLock = (v: string) => `lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    dependencies:
+      lib:
+        specifier: ^1
+        version: ${v}
+
+packages:
+
+  lib@${v}:
+    resolution: {integrity: sha512-x}
+
+snapshots:
+
+  lib@${v}: {}
+`;
+
+test("pnpm-lock.yaml project: lockfile detected, base read with git show, manager passed to deps", async () => {
+  await withTempProject({ "package.json": pkg({ dependencies: { lib: "^1" }, scripts: { test: "x" } }), "pnpm-lock.yaml": pnpmLock("1.0.0") }, async (dir) => {
+    const git = (...a: string[]) => execFileSync("git", ["-c", "user.email=a@b.c", "-c", "user.name=t", ...a], { cwd: dir });
+    git("init", "-q");
+    git("add", ".");
+    git("commit", "-q", "-m", "base");
+    await writeFile(join(dir, "pnpm-lock.yaml"), pnpmLock("1.1.0"));
+    const seen: string[] = [];
+    const factory: DepsFactory = (o) => (seen.push(o.manager), fakeDeps("passed")(o));
+    const { io, out } = capture();
+    assert.equal(await runCli([dir, "--base", "HEAD"], io, factory), 0);
+    assert.deepEqual(seen, ["pnpm"]);
+    assert.match(out[0]!, /lib 1\.0\.0 -> 1\.1\.0 \(direct\)/);
+  });
+});
+
+test("--old pnpm lockfile with an arbitrary file name is recognised by content", async () => {
+  await withTempProject({ "package.json": pkg({ dependencies: { lib: "^1" }, scripts: { test: "x" } }), "pnpm-lock.yaml": pnpmLock("1.1.0"), "old.yaml": pnpmLock("1.0.0") }, async (dir) => {
+    const seen: string[] = [];
+    const factory: DepsFactory = (o) => (seen.push(o.manager), fakeDeps("passed")(o));
+    const { io } = capture();
+    assert.equal(await runCli([dir, "--old", join(dir, "old.yaml")], io, factory), 0);
+    assert.deepEqual(seen, ["pnpm"]);
   });
 });

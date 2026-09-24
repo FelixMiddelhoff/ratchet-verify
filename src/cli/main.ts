@@ -85,7 +85,8 @@ async function pickManager(explicit: string | undefined, projectDir: string): Pr
     const byName = MANAGERS.find((m) => basename(explicit) === m.lockfile);
     if (byName) return supportedOrThrow(byName);
     const head = (await readFile(explicit, "utf8").catch(() => "")).trimStart();
-    return managerByName(head === "" || head.startsWith("{") ? "npm" : "yarn");
+    if (head === "" || head.startsWith("{")) return managerByName("npm");
+    return managerByName(/^lockfileVersion:/m.test(head) ? "pnpm" : "yarn");
   }
   const present = MANAGERS.find((m) => existsSync(join(projectDir, m.lockfile)));
   if (present) return supportedOrThrow(present);
@@ -93,7 +94,7 @@ async function pickManager(explicit: string | undefined, projectDir: string): Pr
 }
 
 function supportedOrThrow(manager: ManagerSpec): ManagerSpec {
-  if (!manager.supported) throw new Error(`found ${manager.lockfile}, but ${manager.name} lockfiles are not supported yet (supported: npm package-lock.json, yarn.lock)`);
+  if (!manager.supported) throw new Error(`found ${manager.lockfile}, but ${manager.name} lockfiles are not supported yet`);
   return manager;
 }
 
@@ -103,7 +104,7 @@ async function readNewLockfile(path: string, projectDir: string): Promise<string
     return await readFile(path, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    const hint = existsSync(join(projectDir, "pnpm-lock.yaml")) ? "found pnpm-lock.yaml, but only package-lock.json and yarn.lock are supported so far" : "run `npm install` (or `yarn install`) to create one";
+    const hint = "run `npm install` (or `yarn install` / `pnpm install`) to create one";
     throw new Error(`no lockfile at ${path}: ${hint}`);
   }
 }
