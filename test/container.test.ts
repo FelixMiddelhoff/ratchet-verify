@@ -254,7 +254,9 @@ withEngine("container: a malicious test cannot exfiltrate, a malicious postinsta
     const fs = require("node:fs");
     const path = require("node:path");
     const out = path.join(__dirname, "exfil.json");
-    https.get("https://registry.npmjs.org/", () => fs.writeFileSync(out, JSON.stringify({ reached: true }))).on("error", () => fs.writeFileSync(out, JSON.stringify({ reached: false })));`;
+    // Destroy the response: an unread body keeps the socket, and so the script, alive.
+    https.get("https://registry.npmjs.org/", (res) => { fs.writeFileSync(out, JSON.stringify({ reached: true })); res.destroy(); })
+      .on("error", () => fs.writeFileSync(out, JSON.stringify({ reached: false })));`;
   const files = {
     "package.json": pkg({ dependencies: { evil: "file:./evil" }, scripts: { test: "node evil-test.js" } }),
     "evil-test.js": exfil.replace('__dirname, "exfil.json"', '__dirname, "test-exfil.json"'),
