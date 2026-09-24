@@ -5,6 +5,8 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-24
+
 ### Documentation
 - CI recipes for GitLab CI, Azure DevOps, CircleCI and Jenkins in `docs/ci.md`. These recipes are adapted from the GitHub Action and require platform-specific verification.
 
@@ -14,7 +16,6 @@ All notable changes to this project are documented here, in
 - yarn.lock support (#2), classic v1 and berry v2+: hand-written parser (`src/lockfile/yarn.ts`) into the same install-map shape; several ranges per entry, scoped names, `npm:` aliases (the real package is reported, direct via the alias name), and workspace/git/file/patch entries skipped. Several versions of one name are keyed per range so a bump still lines up. `--base` reads `yarn.lock` with `git show`; the lockfile is detected in the project (or from `--old`/`--new`).
 - `PackageManager` abstraction (`src/testrun/managers.ts`): frozen install (`yarn install --frozen-lockfile` / `--immutable`) and single-dependency probe (`yarn add name@ver --ignore-scripts` / `--mode=skip-build`) per manager, used by the isolation and bisect probes in `src/pipeline/real.ts`. A manager without a probe degrades to "not tested on its own", never a false safe. Ready for pnpm (#3).
 - Corpus: chalk 4.1.2 -> 5.3.0 through yarn classic (skipped when yarn is not installed).
-
 - pnpm-lock.yaml support (#3), lockfileVersion 5.x, 6.x and 9.x: hand-written reader for the YAML subset pnpm emits (`src/lockfile/pnpm.ts`, no new dependency) into the same install-map shape. `packages:`/`snapshots:`/`importers['.']`, peer suffixes (`(react@18)` and `_react@18`) stripped so versions line up, `npm:` aliases (real package reported, direct via the alias), git/file/link/directory/workspace entries skipped. Several versions of one name are keyed per major (the root's own version keeps the plain path). Frozen install `pnpm install --frozen-lockfile`; probe `pnpm add name@ver --lockfile-only --ignore-scripts`. `--base` reads `pnpm-lock.yaml` with `git show`; content-sniffing recognises a pnpm lockfile passed with `--old`.
 - Sandbox env (temp-dir and container) redirects pnpm/corepack state: `XDG_*`, `PNPM_HOME`, `npm_config_store_dir`/`cache_dir`/`state_dir`, `COREPACK_HOME` all live under the sandbox home.
 - Corpus: chalk 4.1.2 -> 5.3.0 through pnpm (skipped when pnpm is not installed).
@@ -23,6 +24,7 @@ All notable changes to this project are documented here, in
 - Container engine detection only accepts engines running Linux containers (docker must report `OSType` `linux`; podman is Linux). Docker in Windows-containers mode (e.g. GitHub `windows-latest` runners) is no longer picked: `--isolation auto` falls back to temp-dir with a note, `--isolation container` errors with how to switch to Linux containers, and real-engine tests skip.
 
 ### Changed
+- CI runs lint and tests on Ubuntu, macOS and Windows (#11); the required `test` check fails unless every leg passes.
 - `pnpm-lock.yaml` is now supported (see Added); the "pnpm lockfiles are not supported yet" error is gone. An unknown newer `lockfileVersion` errors with a clear message.
 
 ## [0.3.0] - 2026-09-24
@@ -73,6 +75,7 @@ All notable changes to this project are documented here, in
 - A missing `package-lock.json` now says what ratchet supports (and mentions a
   found `yarn.lock` / `pnpm-lock.yaml`) instead of a bare `ENOENT`.
 
+[0.4.0]: https://github.com/FelixMiddelhoff/ratchet-verify/releases/tag/v0.4.0
 [0.3.0]: https://github.com/FelixMiddelhoff/ratchet-verify/releases/tag/v0.3.0
 [0.2.0]: https://github.com/FelixMiddelhoff/ratchet-verify/releases/tag/v0.2.0
 [0.1.1]: https://github.com/FelixMiddelhoff/ratchet-verify/releases/tag/v0.1.1
