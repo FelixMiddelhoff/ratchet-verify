@@ -97,10 +97,12 @@ function broken(base: PartialBase, a: DependencyAssessment, test: Extract<TestOu
   let summary: string;
 
   if (a.bisect) {
-    const { firstBad, lastGood, status, ambiguousWith, installs } = a.bisect;
-    evidence.push({ kind: "bisect", exact: status === "exact", lastGood, firstBad, ambiguousWith, installs, failingOutput: output });
-    summary =
-      status === "exact"
+    const { firstBad, lastGood, status, ambiguousWith, installs, confirmation } = a.bisect;
+    const unstable = status === "unstable";
+    evidence.push({ kind: "bisect", exact: status === "exact", unstable, unconfirmed: confirmation === "unconfirmed", lastGood, firstBad, ambiguousWith, installs, failingOutput: output });
+    summary = unstable
+      ? `broken, but flaky suite: result not reliable (boundary ${lastGood} / ${firstBad} flipped on re-run); no exact version claimed`
+      : status === "exact"
         ? `broken by ${firstBad} (${lastGood} still passed)`
         : `broken somewhere in ${lastGood} < v <= ${firstBad} (bisection bound reached)`;
   } else {

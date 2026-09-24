@@ -51,6 +51,12 @@ The verdict always carries proof:
 - **bisection bound reached** — the narrowed range
   (`last good < v <= still failing`) and the failing output, when
   `maxInstalls` ran out before one version was isolated.
+- **flaky suite** — after the search, ratchet re-runs the reported first bad
+  and last good version once each (counted against `maxInstalls`; two installs
+  are reserved for it). If either flips, the verdict stays broken but says
+  "flaky suite: result not reliable" and names no exact culprit. If the
+  re-runs could not be judged or the budget had no room, the exact result is
+  marked "not re-run to confirm".
 - **not isolated** — the failure could not be pinned to one version (for
   example the registry was unreachable, or no single bump reproduces it); the
   failing output is still shown.

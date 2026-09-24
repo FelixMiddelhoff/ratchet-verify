@@ -20,6 +20,10 @@ export type Evidence =
   | {
       kind: "bisect";
       exact: boolean;
+      /** Set when a boundary flipped on re-run: the suite is flaky and the versions are not a reliable culprit. */
+      unstable?: boolean;
+      /** Boundary re-runs were skipped or inconclusive. */
+      unconfirmed?: boolean;
       lastGood: string;
       firstBad: string;
       ambiguousWith: string[];
