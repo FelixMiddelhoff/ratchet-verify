@@ -5,6 +5,12 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+### Added
+- Container mode restricts egress for the test phase (#23): the project's tests run in a separate container with `--network none`, so a test (or anything it loads) cannot send data out. The install phase keeps the network. Opt out with `--network open` / `"containerNetwork": "open"` (Action input `network`) for suites that need the network.
+
+### Changed
+- Container mode now runs `npm test` offline by default. Projects whose tests reach the network must set `containerNetwork: "open"`. Not restricted: install scripts still have the network (no per-host allowlist in docker/podman).
+
 ### Changed
 - Removed `registry-url` from setup-node in release workflow (npm Trusted Publisher OIDC handles registry authentication).
 - Bumped `actions/setup-node` from v4 to v7 in GitHub Action.

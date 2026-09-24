@@ -180,8 +180,13 @@ was used:
   podman container whose only mount is the sandbox directory, with all
   capabilities dropped and a from-scratch environment. A script that tries to
   read `~/.ssh` or any other host path finds nothing there. `--isolation auto`
-  uses a container when an engine is available. Network access is not
-  restricted in either level.
+  uses a container when an engine is available. The test phase runs in its
+  own container with no network (`--network none`), so tests cannot send data
+  out; `--network open` restores the network for suites that need it. The
+  install phase still has full network access (install scripts run there and
+  no per-host allowlist exists), so a malicious install script can still
+  exfiltrate what it can see, which in a container is only the sandbox.
+  `temp-dir` restricts nothing.
 
 The repository's [corpus](corpus/) replays a credential-stealing `preinstall`
 script and checks that nothing leaks, and an integration test shows the
@@ -191,8 +196,8 @@ machines either way. Details: [docs/configuration.md](docs/configuration.md#isol
 
 ## Limitations
 
-- **Network is open.** Even in a container, installs and tests can reach any
-  host; container mode limits what they can *read*, not where they can send.
+- **Install-phase network is open.** In container mode tests run offline, but
+  install scripts can reach any host (only the sandbox is readable to them).
 - **Tests-based.** ratchet proves "your tests still pass and no cited
   breaking change hits your code". It does *not* prove a version isn't
   malicious: behaviour-preserving malice (the event-stream and ua-parser-js
@@ -245,9 +250,9 @@ duplicate effort; small fixes can go straight to a pull request.
 
 ### High impact
 
-- **Restrict network egress in container mode.** Container isolation limits
-  what install scripts and tests can *read*, not where they can send. Explore
-  registry-only installs and offline tests (issue #23).
+- **Registry-only egress for the install phase.** Tests already run offline in
+  container mode; installs still have the whole network. An allowlisting proxy
+  (issue #23 follow-up) would close that.
 - **Yarn and pnpm lockfile support.** Parse `yarn.lock` (classic and berry) and
   `pnpm-lock.yaml` into the same `InstalledPackages` shape that
   `src/lockfile/parse.ts` produces from `package-lock.json`, so the rest of the

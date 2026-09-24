@@ -1,5 +1,5 @@
 export { buildRunArgs, buildContainerEnv, DEFAULT_IMAGE, detectRuntime, ensureImage, hostUser, MOUNT_POINT, runInContainer } from "./container.js";
-export type { ContainerRuntime, ContainerSettings, Exec } from "./container.js";
+export type { ContainerNetwork, ContainerRuntime, ContainerSettings, Exec } from "./container.js";
 export { buildSandboxEnv, sandboxPaths } from "./env.js";
 export { runCommand } from "./exec.js";
 export type { RunOptions, RunResult } from "./exec.js";

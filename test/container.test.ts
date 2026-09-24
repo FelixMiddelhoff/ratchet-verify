@@ -38,6 +38,50 @@ test("run args: a single bind mount, dropped capabilities, no host paths besides
   assert.deepEqual(args.slice(-3), ["node:24", "npm", "ci"], "image, then the command");
 });
 
+test("run args: offline adds --network none before the image; default run has no --network flag", () => {
+  const off = buildRunArgs({ settings: docker, root: "/r", name: "n", command: "npm", args: ["test"], offline: true });
+  const i = off.indexOf("--network");
+  assert.deepEqual(off.slice(i, i + 2), ["--network", "none"]);
+  assert.ok(i < off.indexOf("node:24"), "an engine flag, not an argument of the command");
+  assert.ok(!buildRunArgs({ settings: docker, root: "/r", name: "n", command: "npm", args: ["ci"] }).includes("--network"));
+});
+
+test("runInContainer: only the offline phase gets --network none, and containerNetwork open disables it", async () => {
+  const netFlag = async (settings: ContainerSettings, phase?: { offline?: boolean }) => {
+    const engine = fakeEngine(() => ok());
+    await runInContainer(settings, "/r", "npm", ["x"], 1000, engine.exec, phase);
+    return engine.calls[0]!.args.includes("none");
+  };
+  assert.equal(await netFlag(docker), false, "install phase keeps the network");
+  assert.equal(await netFlag(docker, { offline: true }), true, "default network mode is tests-offline");
+  assert.equal(await netFlag({ ...docker, network: "tests-offline" }, { offline: true }), true);
+  assert.equal(await netFlag({ ...docker, network: "open" }, { offline: true }), false);
+});
+
+test("installAndTest: install asks for the network, the test run asks to be offline", async () => {
+  await withTempProject({ "package.json": pkg({ scripts: { test: "x" } }), "package-lock.json": "{}" }, async (dir) => {
+    const phases: (boolean | undefined)[] = [];
+    const sandbox = {
+      dir,
+      isolation: "container" as const,
+      run: async (_c: string, _a: string[], _t: number, phase?: { offline?: boolean }) => {
+        phases.push(phase?.offline);
+        return { exitCode: 0, timedOut: false, output: "", truncated: false };
+      },
+    };
+    await installAndTest(sandbox);
+    assert.deepEqual(phases, [undefined, true]);
+  });
+});
+
+test("config and CLI accept containerNetwork / --network and reject bad values", () => {
+  assert.equal(parseConfig("{}").containerNetwork, "tests-offline");
+  assert.equal(parseConfig('{"containerNetwork":"open"}').containerNetwork, "open");
+  assert.throws(() => parseConfig('{"containerNetwork":"proxy"}'), /containerNetwork/);
+  assert.equal(parseCliArgs(["--network", "open", "--base", "x"]).network, "open");
+  assert.throws(() => parseCliArgs(["--network", "none"]), /--network/);
+});
+
 test("run args: environment is built from scratch and points only inside the mount", () => {
   const env = buildContainerEnv();
   for (const [key, value] of Object.entries(env)) {
@@ -189,6 +233,44 @@ withEngine("container: install and test run end to end, and a failing or hanging
   assert.equal((await run('node -e "0"')).status, "passed");
   assert.equal((await run('node -e "process.exit(1)"')).status, "failed");
   assert.equal((await run('node -e "setInterval(()=>{},1000)"', 15_000)).status, "timed-out");
+});
+
+withEngine("container: the test phase has no network; the install phase does (registry probe)", async () => {
+  const script = `node -e "require('node:https').get('https://registry.npmjs.org/',r=>process.exit(0)).on('error',()=>process.exit(3))"`;
+  await withTempProject({ "package.json": pkg({ scripts: { test: script } }) }, async (project) => {
+    const lock = await generateLockfile(project);
+    const run = (network: "tests-offline" | "open") =>
+      withSandbox({ projectDir: project, lockfile: { name: "package-lock.json", content: lock }, container: { ...settings(), network } }, (sb) =>
+        installAndTest(sb, { testTimeoutMs: 60_000 }),
+      );
+    assert.equal((await run("tests-offline")).status, "failed", "registry unreachable from the offline test phase");
+    assert.equal((await run("open")).status, "passed", "opt-out restores the network (and proves the probe itself works)");
+  });
+});
+
+withEngine("container: a malicious test cannot exfiltrate, a malicious postinstall still can reach out (documented limit)", async () => {
+  const exfil = `
+    const https = require("node:https");
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const out = path.join(__dirname, "exfil.json");
+    https.get("https://registry.npmjs.org/", () => fs.writeFileSync(out, JSON.stringify({ reached: true }))).on("error", () => fs.writeFileSync(out, JSON.stringify({ reached: false })));`;
+  const files = {
+    "package.json": pkg({ dependencies: { evil: "file:./evil" }, scripts: { test: "node evil-test.js" } }),
+    "evil-test.js": exfil.replace('__dirname, "exfil.json"', '__dirname, "test-exfil.json"'),
+    "evil/package.json": pkg({ name: "evil", scripts: { postinstall: "node probe.js" } }),
+    "evil/probe.js": exfil,
+  };
+  await withTempProject(files, async (project) => {
+    const lock = await generateLockfile(project);
+    await withSandbox({ projectDir: project, lockfile: { name: "package-lock.json", content: lock }, container: settings() }, async (sb) => {
+      const outcome = await installAndTest(sb, { testTimeoutMs: 60_000 });
+      const read = (f: string) => JSON.parse(readFileSync(join(sb.dir, f), "utf8")).reached;
+      assert.equal(read("evil/exfil.json"), true, "install phase keeps the network: a script there can reach out");
+      assert.equal(read("test-exfil.json"), false, "test phase cannot reach anything");
+      assert.ok(outcome.status === "passed" || outcome.status === "failed");
+    });
+  });
 });
 
 withEngine("container: sandbox files stay removable and the container is gone after a timeout", async () => {

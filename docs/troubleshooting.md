@@ -38,6 +38,13 @@ The image is pulled up front. Check network access and registry login, or set
 `containerImage` in `.ratchetrc` to an image you can pull (it needs Node and
 npm).
 
+**Tests pass normally but fail in container mode with `ENOTFOUND`, `EAI_AGAIN` or connection errors.**
+The test phase runs with `--network none` (`containerNetwork: "tests-offline"`).
+If the suite genuinely needs the network, set `"containerNetwork": "open"` in
+`.ratchetrc` (or `--network open`, Action input `network: open`). The failure
+then shows in the baseline too, so it is reported as `baseline-failing`, not
+blamed on the bump. Install steps are unaffected.
+
 **`Unknown option '--bogus'. …`**
 Check `ratchet-verify --help`.
 

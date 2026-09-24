@@ -29,7 +29,7 @@ const files = { "package.json": pkg({ dependencies: { lib: "^1" } }), "package-l
 
 test("args: defaults, flags and validation", () => {
   assert.deepEqual(parseCliArgs(["--base", "main"]), {
-    projectDir: ".", base: "main", oldLockfile: undefined, oldPackageJson: undefined, newLockfile: undefined, format: "text", failOn: undefined, isolation: undefined, reportDir: undefined, help: false, version: false,
+    projectDir: ".", base: "main", oldLockfile: undefined, oldPackageJson: undefined, newLockfile: undefined, format: "text", failOn: undefined, isolation: undefined, network: undefined, reportDir: undefined, help: false, version: false,
   });
   assert.equal(parseCliArgs(["proj", "--old", "o.json", "--json"]).format, "json");
   assert.equal(parseCliArgs(["--sarif", "--old", "o"]).format, "sarif");
