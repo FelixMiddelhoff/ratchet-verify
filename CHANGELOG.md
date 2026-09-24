@@ -6,6 +6,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Changed
+- Changelog fetcher: a pointer `CHANGELOG` file with no version headings (lodash) no longer ends the file search; more file-name variants tried (`Changelog.md`, `History.md`, `NEWS.md`, ...); changelogs kept in the GitHub wiki (`raw.githubusercontent.com/wiki/...`, lodash) are read as a last fallback; the rate-limit note now says to set `GITHUB_TOKEN`. Real-fetch finding: the debug "no changelog" report was unauthenticated GitHub rate limiting (60/h), not a missing changelog; is-number truly has none.
 - Removed `registry-url` from setup-node in release workflow (npm Trusted Publisher OIDC handles registry authentication).
 - Bumped `actions/setup-node` from v4 to v7 in GitHub Action.
 - Changelog matching (#5): common-word symbols (`option`, `parse`, `get`, ...) named only in bare prose are capped at medium confidence in breaking sections and no longer match plain lines of a major release. Backticks, `.symbol` and `symbol(` keep full strength. Nothing is dropped from breaking sections or removal notes.

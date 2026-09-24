@@ -38,7 +38,8 @@ export interface ChangelogRequest {
   githubToken?: string;
 }
 
-const CHANGELOG_FILES = ["CHANGELOG.md", "HISTORY.md", "CHANGES.md", "changelog.md"];
+const CHANGELOG_FILES = ["CHANGELOG.md", "HISTORY.md", "CHANGES.md", "changelog.md", "Changelog.md", "History.md", "Changes.md", "CHANGELOG", "CHANGELOG.markdown", "NEWS.md", "RELEASES.md"];
+const WIKI_PAGES = ["Changelog.md", "CHANGELOG.md", "Release-Notes.md"];
 const RELEASE_PAGES = 3;
 
 export async function fetchChangelog(request: ChangelogRequest): Promise<ChangelogResult> {
@@ -65,6 +66,10 @@ export async function fetchChangelog(request: ChangelogRequest): Promise<Changel
   if (result.missingVersions.length > 0) {
     const sections = await fetchChangelogFile(http, result.repo, result.notes);
     addEntries(result, sections.filter((s) => wanted.includes(s.version)).map((s) => ({ ...s, origin: "changelog-file" as const })));
+  }
+  if (result.missingVersions.length > 0) {
+    const wiki = await fetchWikiChangelog(http, result.repo, result.notes);
+    addEntries(result, wiki.filter((s) => wanted.includes(s.version)).map((s) => ({ ...s, origin: "changelog-file" as const })));
   }
 
   const origins = new Set(result.entries.map((e) => e.origin));
@@ -102,7 +107,7 @@ async function getJson(
   try {
     const response = await http(url, { headers });
     if (response.ok) return await response.json();
-    notes.push(response.status === 403 || response.status === 429 ? `${label} rate limited (HTTP ${response.status}).` : `${label} returned HTTP ${response.status}.`);
+    notes.push(response.status === 403 || response.status === 429 ? `${label} rate limited (HTTP ${response.status}); set GITHUB_TOKEN to raise the limit.` : `${label} returned HTTP ${response.status}.`);
   } catch (error) {
     notes.push(`${label} unreachable: ${(error as Error).message}`);
   }
@@ -163,9 +168,33 @@ async function fetchChangelogFile(
     const url = `https://raw.githubusercontent.com/${repo.owner}/${repo.repo}/HEAD/${directory}${file}`;
     try {
       const response = await http(url);
-      if (response.ok) return parseChangelogSections(await response.text());
+      if (response.ok) {
+        const sections = parseChangelogSections(await response.text());
+        if (sections.length > 0) return sections; // a pointer file ("see the wiki") has no version sections: keep looking
+      }
     } catch (error) {
       notes.push(`${file} unreachable: ${(error as Error).message}`);
+    }
+  }
+  return [];
+}
+
+/** Some projects (lodash) keep their changelog in the GitHub wiki, served raw under /wiki/. */
+async function fetchWikiChangelog(
+  http: FetchLike,
+  repo: GitHubRepo,
+  notes: string[],
+): Promise<{ version: string; body: string }[]> {
+  for (const page of WIKI_PAGES) {
+    const url = `https://raw.githubusercontent.com/wiki/${repo.owner}/${repo.repo}/${page}`;
+    try {
+      const response = await http(url);
+      if (response.ok) {
+        const sections = parseChangelogSections(await response.text());
+        if (sections.length > 0) return sections;
+      }
+    } catch (error) {
+      notes.push(`wiki ${page} unreachable: ${(error as Error).message}`);
     }
   }
   return [];

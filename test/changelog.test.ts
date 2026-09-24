@@ -176,3 +176,47 @@ test("describeVersions lists a few versions and summarises a long run", async ()
   const many = Array.from({ length: 58 }, (_, i) => `1.${i}.0`);
   assert.equal(describeVersions(many), "58 versions (1.0.0 to 1.57.0)");
 });
+
+const WIKI = (page: string) => `https://raw.githubusercontent.com/wiki/o/r/${page}`;
+
+test("pointer CHANGELOG without version sections does not stop the file search", async () => {
+  const http = fakeFetch({
+    [REGISTRY]: packument("o/r"),
+    [RELEASES]: { json: [] },
+    [RAW("CHANGELOG")]: { text: "https://github.com/o/r/wiki/Changelog" },
+    [RAW("History.md")]: { text: "## 2.0.0\nbreaking x\n## 1.1.0\ny" },
+  });
+  const result = await fetchChangelog({ ...req, fetch: http });
+  assert.equal(result.source, "changelog-file");
+  assert.deepEqual(result.missingVersions, []);
+});
+
+test("changelog kept in the GitHub wiki is found (lodash style heading)", async () => {
+  const http = fakeFetch({
+    [REGISTRY]: packument("o/r"),
+    [RELEASES]: { json: [] },
+    [RAW("CHANGELOG")]: { text: "see wiki" },
+    [WIKI("Changelog.md")]: { text: "## <sub>v2.0.0</sub>\n#### _Feb 2021_\nfixed x\n\n## <sub>v1.1.0</sub>\nfixed y" },
+  });
+  const result = await fetchChangelog({ ...req, fetch: http });
+  assert.equal(result.source, "changelog-file");
+  assert.deepEqual(result.entries.map((e) => e.version), ["1.1.0", "2.0.0"]);
+});
+
+test("no changelog anywhere (file names, wiki, releases all absent) stays none with missing versions", async () => {
+  const http = fakeFetch({ [REGISTRY]: packument("o/r"), [RELEASES]: { json: [] } });
+  const result = await fetchChangelog({ ...req, fetch: http });
+  assert.equal(result.source, "none");
+  assert.deepEqual(result.missingVersions, ["1.1.0", "2.0.0"]);
+});
+
+test("wiki page without version headings is not a match", async () => {
+  const http = fakeFetch({ [REGISTRY]: packument("o/r"), [RELEASES]: { json: [] }, [WIKI("Changelog.md")]: { text: "# Home\nwelcome" } });
+  assert.equal((await fetchChangelog({ ...req, fetch: http })).source, "none");
+});
+
+test("rate-limit note tells the user to set GITHUB_TOKEN", async () => {
+  const http = fakeFetch({ [REGISTRY]: packument("o/r"), [RELEASES]: { status: 429 } });
+  const result = await fetchChangelog({ ...req, fetch: http });
+  assert.ok(result.notes.some((n) => n.includes("rate limited") && n.includes("GITHUB_TOKEN")));
+});
