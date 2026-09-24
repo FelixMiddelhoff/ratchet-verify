@@ -101,3 +101,31 @@ test("no changelog entries: no hits, no breaking sections", () => {
   const result = run([], [site("foo")]);
   assert.deepEqual(result, { hits: [], majorBoundary: true, hasBreakingSections: false });
 });
+
+test("common word in bare prose of a breaking line: capped at medium, not dropped", () => {
+  const body = "### Breaking Changes\n- default value specified for boolean option now always used";
+  const [hit] = run([entry("2.0.0", body)], [site("option")]).hits;
+  assert.equal(hit?.confidence, "medium");
+  assert.match(hit!.reason, /common word/);
+});
+
+test("common word with code-style evidence stays high: backticks, .call form, call()", () => {
+  for (const line of ["- `option` removed", "- program.option is gone", "- option() now throws"]) {
+    const [hit] = run([entry("2.0.0", `### Breaking Changes\n- ${line}`)], [site("option")]).hits;
+    assert.equal(hit?.confidence, "high", line);
+  }
+});
+
+test("common word in bare prose of a major release, no breaking wording: not flagged", () => {
+  assert.deepEqual(run([entry("2.0.0", "- improved the option help text")], [site("option")]).hits, []);
+});
+
+test("common word in a removal note still matches (medium)", () => {
+  const [hit] = run([entry("1.5.0", "- removed the parse fallback")], [site("parse")], "1.0.0", "1.5.0").hits;
+  assert.equal(hit?.confidence, "medium");
+});
+
+test("non-common symbol in bare prose keeps high confidence", () => {
+  const [hit] = run([entry("2.0.0", "### Breaking Changes\n- frobnicate no longer accepts strings")], [site("frobnicate")]).hits;
+  assert.equal(hit?.confidence, "high");
+});

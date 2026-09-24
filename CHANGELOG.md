@@ -5,6 +5,9 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+### Changed
+- Changelog matching (#5): common-word symbols (`option`, `parse`, `get`, ...) named only in bare prose are capped at medium confidence in breaking sections and no longer match plain lines of a major release. Backticks, `.symbol` and `symbol(` keep full strength. Nothing is dropped from breaking sections or removal notes.
+
 ## [0.2.0] - 2026-09-23
 
 ### Added
