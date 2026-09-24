@@ -1,27 +1,17 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { MANAGERS, managerByName, type PackageManager } from "./managers.js";
 import type { RunResult, Sandbox } from "../sandbox/index.js";
 
-export type PackageManager = "npm" | "yarn" | "pnpm";
-
-const LOCKFILES: [file: string, manager: PackageManager][] = [
-  ["pnpm-lock.yaml", "pnpm"],
-  ["yarn.lock", "yarn"],
-  ["package-lock.json", "npm"],
-];
-
-const FROZEN_INSTALL: Record<PackageManager, string[]> = {
-  npm: ["ci"],
-  yarn: ["install", "--frozen-lockfile"],
-  pnpm: ["install", "--frozen-lockfile"],
-};
+export type { PackageManager, ManagerSpec } from "./managers.js";
+export { MANAGERS, managerByName } from "./managers.js";
 
 const TEST_TIMEOUT_MS = 10 * 60 * 1000;
 const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
 
 export function detectPackageManager(dir: string): PackageManager | undefined {
-  return LOCKFILES.find(([file]) => existsSync(join(dir, file)))?.[1];
+  return MANAGERS.find((m) => existsSync(join(dir, m.lockfile)))?.name;
 }
 
 /** `scripts.test` is the convention shared by all three managers. */
@@ -52,7 +42,8 @@ export async function installAndTest(sandbox: Sandbox, options: TestRunOptions =
   if (!manager) return { status: "no-lockfile" };
   if ((await detectTestScript(sandbox.dir)) === undefined) return { status: "no-test-script" };
 
-  const install = await sandbox.run(manager, FROZEN_INSTALL[manager], options.installTimeoutMs ?? INSTALL_TIMEOUT_MS);
+  const lockfileText = await readFile(join(sandbox.dir, managerByName(manager).lockfile), "utf8");
+  const install = await sandbox.run(manager, managerByName(manager).frozenInstall(lockfileText), options.installTimeoutMs ?? INSTALL_TIMEOUT_MS);
   if (install.exitCode !== 0) return { status: "install-failed", result: install };
 
   const result = await sandbox.run(manager, ["test"], options.testTimeoutMs ?? TEST_TIMEOUT_MS, { offline: true });

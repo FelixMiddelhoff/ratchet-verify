@@ -24,10 +24,10 @@ export const USAGE = `ratchet: verify a dependency bump before you merge it
 
 Usage: ratchet [project-dir] (--base <git-ref> | --old <lockfile>) [options]
 
-  --base <ref>        compare against package-lock.json at this git ref (e.g. origin/main)
+  --base <ref>        compare against the lockfile (package-lock.json or yarn.lock) at this git ref (e.g. origin/main)
   --old <file>        compare against this lockfile instead of a git ref
   --old-package-json <file>  package.json that goes with --old (default: the working tree's)
-  --new <file>        lockfile with the proposed bump (default: <project-dir>/package-lock.json)
+  --new <file>        lockfile with the proposed bump (default: <project-dir>/package-lock.json or yarn.lock)
   --json              machine-readable output
   --sarif             SARIF 2.1.0 output for code scanning
   --markdown          Markdown output, as posted in pull request comments

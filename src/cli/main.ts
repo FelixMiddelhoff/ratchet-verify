@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { renderMarkdown } from "../ci/comment.js";
 import { loadConfig } from "../config.js";
@@ -11,9 +11,9 @@ import { resolveIsolation, type ResolvedIsolation } from "../sandbox/index.js";
 import { renderJson, renderSarif, renderText, type Report } from "../report/index.js";
 import { parseCliArgs, USAGE, type OutputFormat } from "./args.js";
 import { readFileAtRef } from "./git.js";
+import { MANAGERS, managerByName, type ManagerSpec } from "../testrun/managers.js";
 import { packageVersion } from "./version.js";
 
-const LOCKFILE = "package-lock.json";
 
 export interface CliIo {
   out(text: string): void;
@@ -24,6 +24,7 @@ export interface CliIo {
 export interface DepsFactoryOptions {
   projectDir: string;
   oldLockfile: string;
+  manager: ManagerSpec["name"];
   oldPackageJson?: string;
   isolation: ResolvedIsolation;
 }
@@ -50,15 +51,16 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
     if (args.isolation) config.isolation = args.isolation;
     if (args.network) config.containerNetwork = args.network;
 
-    const oldLockfile = args.oldLockfile ? await readFile(args.oldLockfile, "utf8") : await readFileAtRef(projectDir, args.base!, LOCKFILE);
-    const newLockfile = await readNewLockfile(args.newLockfile ?? join(projectDir, LOCKFILE), projectDir);
+    const manager = await pickManager(args.newLockfile ?? args.oldLockfile, projectDir);
+    const oldLockfile = args.oldLockfile ? await readFile(args.oldLockfile, "utf8") : await readFileAtRef(projectDir, args.base!, manager.lockfile);
+    const newLockfile = await readNewLockfile(args.newLockfile ?? join(projectDir, manager.lockfile), projectDir);
     const manifest = JSON.parse(await readFile(join(projectDir, "package.json"), "utf8"));
     const oldPackageJson = await readOldPackageJson(args, projectDir);
 
     const isolation = await resolveIsolation({ mode: config.isolation, runtime: config.containerRuntime, image: config.containerImage, network: config.containerNetwork });
     for (const note of isolation.notes) io.err(`ratchet: ${note}`);
 
-    const deps = (makeDeps ?? defaultDeps(config, io.env))({ projectDir, oldLockfile, oldPackageJson, isolation });
+    const deps = (makeDeps ?? defaultDeps(config, io.env))({ projectDir, oldLockfile, manager: manager.name, oldPackageJson, isolation });
     const report = await runPipeline({ oldLockfile, newLockfile, manifest, oldPackageJson, config }, deps);
 
     io.out(render(report, args.format));
@@ -74,14 +76,34 @@ function defaultDeps(config: Awaited<ReturnType<typeof loadConfig>>, env: NodeJS
   return (options) => realDeps({ ...options, config, githubToken: env.GITHUB_TOKEN });
 }
 
+/**
+ * Which lockfile format is in play: by an explicit file's name, else its content, else whichever
+ * supported lockfile sits in the project (same order the test runner uses).
+ */
+async function pickManager(explicit: string | undefined, projectDir: string): Promise<ManagerSpec> {
+  if (explicit) {
+    const byName = MANAGERS.find((m) => basename(explicit) === m.lockfile);
+    if (byName) return supportedOrThrow(byName);
+    const head = (await readFile(explicit, "utf8").catch(() => "")).trimStart();
+    return managerByName(head === "" || head.startsWith("{") ? "npm" : "yarn");
+  }
+  const present = MANAGERS.find((m) => existsSync(join(projectDir, m.lockfile)));
+  if (present) return supportedOrThrow(present);
+  return managerByName("npm");
+}
+
+function supportedOrThrow(manager: ManagerSpec): ManagerSpec {
+  if (!manager.supported) throw new Error(`found ${manager.lockfile}, but ${manager.name} lockfiles are not supported yet (supported: npm package-lock.json, yarn.lock)`);
+  return manager;
+}
+
 /** A missing lockfile is the most likely first-run error, so say what ratchet supports instead of ENOENT. */
 async function readNewLockfile(path: string, projectDir: string): Promise<string> {
   try {
     return await readFile(path, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    const other = ["yarn.lock", "pnpm-lock.yaml"].find((file) => existsSync(join(projectDir, file)));
-    const hint = other ? `found ${other}, but only npm's package-lock.json is supported so far` : "run `npm install` to create one";
+    const hint = existsSync(join(projectDir, "pnpm-lock.yaml")) ? "found pnpm-lock.yaml, but only package-lock.json and yarn.lock are supported so far" : "run `npm install` (or `yarn install`) to create one";
     throw new Error(`no lockfile at ${path}: ${hint}`);
   }
 }
