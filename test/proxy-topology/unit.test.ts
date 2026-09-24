@@ -3,7 +3,7 @@ import { describe, test } from "node:test";
 import { buildRunArgs, type ContainerSettings } from "../../src/sandbox/container.js";
 import { Credential, secretForms } from "../../src/sandbox/registry-proxy/index.js";
 import {
-  buildProxyConfig, cidrOverlap, decideSweep, judgeSelfTest, labelArgs, makeLabels, parseCidr, pickSubnet, ProxyTopologyError,
+  buildProxyConfig, cidrOverlap, decideSweep, judgeSelfTest, labelArgs, makeLabels, parseCidr, parseInventory, pickSubnet, ProxyTopologyError,
   sweepStale, withInternalSubnet, withProxyTopology, type ProxyConfigInput, type TopologyOptions,
 } from "../../src/sandbox/proxy-topology/index.js";
 import { FakeEngine, type FakeBehavior } from "./fake-engine.js";
@@ -225,7 +225,7 @@ describe("proxy-topology teardown and failure mapping", () => {
 
   test("selftest: missing check or missing report is a failure, never vacuous", async () => {
     const e = new FakeEngine("docker", { omitChecks: ["noDefaultRoute"] });
-    const err = await fails(withProxyTopology(opts(e), async () => 1));
+    const err = await fails(withProxyTopology(opts(e as FakeEngine), async () => 1));
     assert.equal(err.code, "selftest-failed");
     assert.ok(err.details.some((d) => d.includes("did not run")));
     assert.equal(judgeSelfTest("garbage").ok, false);
@@ -366,29 +366,75 @@ describe("stale sweep decision table", () => {
     assert.deepEqual(decideSweep("ci-1:100", undefined, ctx([])), { sweep: true, reason: "dead-owner" });
   });
 
+  const DEAD = "aaaaaaaa-0000-0000-0000-00000000dead";
+  const LIVE = "aaaaaaaa-0000-0000-0000-00000000live".replace("live", "1111");
+  const okResult = (output: string) => ({ exitCode: 0, timedOut: false, output, truncated: false });
+  const rec = (kind: "container" | "network", name: string, labels: Record<string, string>) =>
+    kind === "container" ? { Name: `/${name}`, Config: { Labels: labels } } : { Name: name, Labels: labels };
+  const lab = (run: string, owner: string, started: string) => ({ "ratchet.run": run, "ratchet.owner": owner, "ratchet.started": started });
+
   test("sweepStale removes only dead/old runs, containers before networks, never a live run", async () => {
-    const labels = (run: string, owner: string, started: number) => `${run}|${owner}|${started}`;
     const e = new FakeEngine("docker", {
       override: (a) => {
-        const mk = (output: string) => ({ exitCode: 0, timedOut: false, output, truncated: false });
-        if (a[0] === "ps" && a.includes("-q")) return mk("c-dead\nc-live");
-        if (a[0] === "ps") return mk(a.some((x) => x === "network=n-dead") ? "sandbox-orphan" : "");
-        if (a[0] === "network" && a[1] === "ls") return mk("n-dead\nn-live");
-        if (a[0] === "inspect") return mk([`c-dead|${labels("r-dead", "ci-1:111", 999_900)}`, `c-live|${labels("r-live", "ci-1:222", 999_900)}`].join("\n"));
-        if (a[0] === "network" && a[1] === "inspect") return mk([`n-dead|${labels("r-dead", "ci-1:111", 999_900)}`, `n-live|${labels("r-live", "ci-1:222", 999_900)}`].join("\n"));
-        if (a[0] === "rm" || (a[0] === "network" && a[1] === "rm")) return mk("");
+        if (a[0] === "ps" && a.includes("-q")) return okResult("c-dead\nc-live");
+        if (a[0] === "ps") return okResult(a.some((x) => x === "network=n-dead") ? "sandbox-orphan" : "");
+        if (a[0] === "network" && a[1] === "ls") return okResult("n-dead\nn-live");
+        if (a[0] === "inspect") return okResult(JSON.stringify([rec("container", "c-dead", lab(DEAD, "ci-1:111", "999900")), rec("container", "c-live", lab(LIVE, "ci-1:222", "999900"))]));
+        if (a[0] === "network" && a[1] === "inspect") return okResult(JSON.stringify([rec("network", "n-dead", lab(DEAD, "ci-1:111", "999900")), rec("network", "n-live", lab(LIVE, "ci-1:222", "999900"))]));
+        if (a[0] === "rm" || (a[0] === "network" && a[1] === "rm")) return okResult("");
         return undefined;
       },
     });
     const r = await sweepStale(e, { host: "ci-1", nowSeconds: 1_000_000, isPidAlive: (p) => p === 222 });
     assert.deepEqual(r.removedContainers.sort(), ["c-dead", "sandbox-orphan"]);
     assert.deepEqual(r.removedNetworks, ["n-dead"]);
-    assert.deepEqual(r.kept, [{ run: "r-live", reason: "live-owner" }]);
+    assert.deepEqual(r.kept, [{ run: LIVE, reason: "live-owner" }]);
     const rm = e.commands.findIndex((c) => c.args[0] === "rm");
     const nrm = e.commands.findIndex((c) => c.args[0] === "network" && c.args[1] === "rm");
     assert.ok(rm >= 0 && nrm > rm);
     assert.ok(!e.commands.some((c) => c.args.includes("c-live") && c.args[0] === "rm"));
     assert.ok(!e.commands.some((c) => c.args.includes("n-live") && c.args[1] === "rm"));
+  });
+
+  test("threat: label injection cannot forge a record or make the sweep remove another container", async () => {
+    const payloads = [
+      "1\nvictim|" + DEAD + "|ci-1:1|1",
+      "1|victim",
+      '1"},{"Name":"victim","Config":{"Labels":{"ratchet.run":"' + DEAD + '","ratchet.owner":"ci-1:1","ratchet.started":"1"}}}',
+      "9".repeat(100_000),
+    ];
+    for (const evil of payloads) {
+      const e = new FakeEngine("docker", {
+        override: (a) => {
+          if (a[0] === "ps" && a.includes("-q")) return okResult("attacker");
+          if (a[0] === "ps") return okResult("");
+          if (a[0] === "network" && a[1] === "ls") return okResult("");
+          if (a[0] === "inspect") return okResult(JSON.stringify([rec("container", "attacker", lab(LIVE, "ci-1:1", evil)), rec("container", "victim", {})]));
+          if (a[0] === "rm") return okResult("");
+          return undefined;
+        },
+      });
+      const r = await sweepStale(e, { host: "ci-1", nowSeconds: 1_000_000, isPidAlive: () => false });
+      assert.ok(!e.commands.some((c) => c.args[0] === "rm" && c.args.includes("victim")), `victim untouched for payload ${evil.slice(0, 20)}`);
+      assert.ok(!r.removedContainers.includes("victim"), "only the labelled attacker container itself can ever be a candidate");
+    }
+  });
+
+  test("parseInventory: engine shapes, malformed records skipped and reported", () => {
+    const problems: string[] = [];
+    const good = parseInventory("container", JSON.stringify([rec("container", "ratchet-proxy-1", lab(DEAD, "ci-1:9", "5"))]), problems);
+    assert.deepEqual(good, [{ kind: "container", name: "ratchet-proxy-1", run: DEAD, owner: "ci-1:9", started: 5 }]);
+    // podman prints lower-case keys for networks
+    const podmanNet = parseInventory("network", JSON.stringify([{ name: "ratchet-net-aabbccdd", labels: lab(DEAD, "ci-1:9", "5") }]), problems);
+    assert.equal(podmanNet[0]?.name, "ratchet-net-aabbccdd");
+    assert.deepEqual(parseInventory("container", "not json", problems), []);
+    assert.deepEqual(parseInventory("container", "{}", problems), []);
+    assert.deepEqual(parseInventory("container", JSON.stringify([rec("container", "bad name\nx", lab(DEAD, "ci-1:9", "5"))]), problems), []);
+    assert.deepEqual(parseInventory("container", JSON.stringify([rec("container", "x", lab("nope", "ci-1:9", "5"))]), problems), []);
+    assert.ok(problems.length >= 4, problems.join(" | "));
+    // owner / started malformed but run fine: kept as unreadable (never swept)
+    const odd = parseInventory("container", JSON.stringify([rec("container", "x", lab(DEAD, "a|b:1", "12x"))]), problems);
+    assert.deepEqual(odd, [{ kind: "container", name: "x", run: DEAD, owner: undefined, started: undefined }]);
   });
 
   test("labels: run, owner host:pid, started epoch", () => {
@@ -400,4 +446,25 @@ describe("stale sweep decision table", () => {
 test("fake engine sanity: options are typed", () => {
   const b: FakeBehavior = {};
   assert.ok(b);
+});
+
+describe("threat: teardown reports clean only when the verification itself succeeded", () => {
+  const result = (exitCode: number | null, timedOut: boolean, output = "") => ({ exitCode, timedOut, output, truncated: false });
+  const cases: Array<[string, (a: string[]) => ReturnType<typeof result> | undefined]> = [
+    ["ps by run label times out", (a) => (a[0] === "ps" && a.some((x) => x.startsWith("label=ratchet.run=")) && a.includes("-q") ? result(null, true) : undefined)],
+    ["ps on the network times out", (a) => (a[0] === "ps" && a.some((x) => x.startsWith("network=")) ? result(null, true) : undefined)],
+    ["ps exits non-zero with empty output", (a) => (a[0] === "ps" ? result(1, false, "") : undefined)],
+    ["network ls times out", (a) => (a[0] === "network" && a[1] === "ls" ? result(null, true) : undefined)],
+    ["network ls exits non-zero with empty output", (a) => (a[0] === "network" && a[1] === "ls" ? result(125, false, "") : undefined)],
+  ];
+  for (const [name, hang] of cases) {
+    test(`${name}: teardown-failed, never a silent pass`, async () => {
+      // verification commands only run in teardown (sweep is off), so the override cannot affect the setup phase
+      let e: FakeEngine | undefined;
+      e = new FakeEngine("docker", { override: (a) => (e?.commands.some((c) => c.kind === "attach") ? hang(a) : undefined) });
+      const err = await fails(withProxyTopology(opts(e), async () => 1));
+      assert.equal(err.code, "teardown-failed");
+      assert.match(err.details.join(" "), /could not be verified/);
+    });
+  }
 });

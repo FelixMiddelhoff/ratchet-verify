@@ -70,21 +70,57 @@ interface Found {
   started: number | undefined;
 }
 
-const field = (v: string | undefined): string | undefined => (v === undefined || v === "" || v === "<no value>" ? undefined : v);
+const RUN_RE = /^[0-9a-f-]{16,64}$/;
+const OWNER_RE = /^[A-Za-z0-9._-]{1,255}:[0-9]{1,10}$/;
+const STARTED_RE = /^[0-9]{1,12}$/;
+const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
 
-export function parseInventory(kind: Found["kind"], output: string): Found[] {
+const asRecord = (v: unknown): Record<string, unknown> | undefined => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined);
+
+/**
+ * Parses `inspect` / `network inspect` JSON (both engines print an array). JSON, not a text template: a label value
+ * with a newline or a separator cannot forge a second record. Every field is validated; a record whose run label is
+ * malformed is skipped and reported, one whose owner or start time is malformed is kept as "unreadable" (never swept).
+ */
+export function parseInventory(kind: Found["kind"], output: string, problems: string[] = []): Found[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    problems.push(`${kind} inspect output is not JSON`);
+    return [];
+  }
+  if (!Array.isArray(parsed)) {
+    problems.push(`${kind} inspect output is not a list`);
+    return [];
+  }
   const found: Found[] = [];
-  for (const line of output.split("\n")) {
-    const [name, run, owner, started] = line.trim().split("|");
-    if (!name || !field(run)) continue;
-    const s = Number(field(started));
-    found.push({ kind, name: name.replace(/^\//, ""), run: run as string, owner: field(owner), started: Number.isFinite(s) && field(started) !== undefined ? s : undefined });
+  for (const entry of parsed) {
+    const rec = asRecord(entry);
+    const rawName = rec?.Name ?? rec?.name;
+    const name = typeof rawName === "string" ? rawName.replace(/^[/]/, "") : undefined;
+    const labels = asRecord(kind === "container" ? asRecord(rec?.Config)?.Labels : (rec?.Labels ?? rec?.labels));
+    if (!name || !NAME_RE.test(name)) {
+      problems.push(`skipped a ${kind} record with a malformed name`);
+      continue;
+    }
+    const run = labels?.[LABEL_RUN];
+    if (typeof run !== "string" || !RUN_RE.test(run)) {
+      if (run !== undefined) problems.push(`skipped ${kind} ${name}: malformed ${LABEL_RUN} label`);
+      continue;
+    }
+    const owner = labels?.[LABEL_OWNER];
+    const started = labels?.[LABEL_STARTED];
+    found.push({
+      kind,
+      name,
+      run,
+      owner: typeof owner === "string" && OWNER_RE.test(owner) ? owner : undefined,
+      started: typeof started === "string" && STARTED_RE.test(started) ? Number(started) : undefined,
+    });
   }
   return found;
 }
-
-const CONTAINER_FORMAT = `{{.Name}}|{{index .Config.Labels "${LABEL_RUN}"}}|{{index .Config.Labels "${LABEL_OWNER}"}}|{{index .Config.Labels "${LABEL_STARTED}"}}`;
-const NETWORK_FORMAT = `{{.Name}}|{{index .Labels "${LABEL_RUN}"}}|{{index .Labels "${LABEL_OWNER}"}}|{{index .Labels "${LABEL_STARTED}"}}`;
 
 export interface SweepResult {
   removedContainers: string[];
@@ -113,13 +149,13 @@ export async function sweepStale(engine: Engine, ctx: Partial<SweepContext> = {}
   const nIds = await ids(engine, ["network", "ls", "-q", "--filter", `label=${LABEL_RUN}`]);
   const items: Found[] = [];
   if (cIds.length > 0) {
-    const r = await engine.run(["inspect", "--type", "container", "--format", CONTAINER_FORMAT, ...cIds]);
-    if (r.exitCode === 0) items.push(...parseInventory("container", r.output));
+    const r = await engine.run(["inspect", "--type", "container", ...cIds]);
+    if (r.exitCode === 0) items.push(...parseInventory("container", r.output, result.problems));
     else result.problems.push(`container inspect failed: ${r.output.trim().slice(0, 200)}`);
   }
   if (nIds.length > 0) {
-    const r = await engine.run(["network", "inspect", "--format", NETWORK_FORMAT, ...nIds]);
-    if (r.exitCode === 0) items.push(...parseInventory("network", r.output));
+    const r = await engine.run(["network", "inspect", ...nIds]);
+    if (r.exitCode === 0) items.push(...parseInventory("network", r.output, result.problems));
     else result.problems.push(`network inspect failed: ${r.output.trim().slice(0, 200)}`);
   }
 

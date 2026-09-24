@@ -308,12 +308,21 @@ export async function withProxyTopology<T>(options: TopologyOptions, fn: (topolo
     names.add(sidecarName);
     const rm = await run(rmArgs(engine, [...names]), 30_000);
     // `rm -f` of a name that never existed exits non-zero on some engines; the verification below is what counts.
+    // A verification command that timed out or failed says nothing: empty output from it is NOT proof of a clean daemon.
+    const unverified = (label: string, r: Awaited<ReturnType<Engine["run"]>>): boolean => {
+      if (r.timedOut || r.exitCode !== 0) {
+        problems.push(`teardown could not be verified: ${label} ${r.timedOut ? "timed out" : `exited ${String(r.exitCode)}`}`);
+        return true;
+      }
+      return false;
+    };
     const left = await run(["ps", "-a", "-q", "--filter", `label=${LABEL_RUN}=${runId}`], 30_000);
     const onNet = await run(["ps", "-a", "-q", "--filter", `network=${networkName}`], 30_000);
-    if (left.output.trim() !== "" || onNet.output.trim() !== "") problems.push(`containers still present after removal: ${redact(rm.output.trim().slice(-200))}`);
+    const containersVerified = !unverified("listing containers by run label", left) && !unverified("listing containers on the network", onNet);
+    if (containersVerified && (left.output.trim() !== "" || onNet.output.trim() !== "")) problems.push(`containers still present after removal: ${redact(rm.output.trim().slice(-200))}`);
     const nrm = await run(["network", "rm", networkName], 30_000);
     const nets = await run(["network", "ls", "-q", "--filter", `label=${LABEL_RUN}=${runId}`], 30_000);
-    if (nets.output.trim() !== "") problems.push(`network still present after removal: ${redact(nrm.output.trim().slice(-200))}`);
+    if (!unverified("listing networks by run label", nets) && nets.output.trim() !== "") problems.push(`network still present after removal: ${redact(nrm.output.trim().slice(-200))}`);
     timings.teardownMs = now() - ts;
     return problems.map((p) => redact(p));
   }
