@@ -5,6 +5,10 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+### Changed
+- Removed `registry-url` from setup-node in release workflow (npm Trusted Publisher OIDC handles registry authentication).
+- Bumped `actions/setup-node` from v4 to v7 in GitHub Action.
+
 ## [0.2.0] - 2026-09-23
 
 ### Added
