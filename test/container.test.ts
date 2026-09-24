@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildContainerEnv, buildRunArgs, detectRuntime, ensureImage, hostUser, runInContainer, type ContainerSettings, type Exec } from "../src/sandbox/container.js";
+import { buildContainerEnv, buildRunArgs, detectEngine, detectRuntime, ensureImage, hostUser, runInContainer, type ContainerSettings, type Exec } from "../src/sandbox/container.js";
 import { resolveIsolation } from "../src/sandbox/isolation.js";
 import { withSandbox } from "../src/sandbox/sandbox.js";
 import { installAndTest } from "../src/testrun/index.js";
@@ -106,7 +106,7 @@ test("run args: a comma in the path is refused (mount syntax cannot express it)"
 });
 
 test("detectRuntime: prefers docker, falls back to podman, reports rootless, undefined when neither works", async () => {
-  const dockerUp = fakeEngine((_args, command) => (command === "docker" ? ok("[name=seccomp,profile=builtin name=rootless]") : fail()));
+  const dockerUp = fakeEngine((_args, command) => (command === "docker" ? ok("linux|[name=seccomp,profile=builtin name=rootless]") : fail()));
   assert.deepEqual(await detectRuntime("auto", dockerUp.exec), { runtime: "docker", rootless: true });
 
   const onlyPodman = fakeEngine((_args, command) => (command === "podman" ? ok("false") : fail()));
@@ -117,6 +117,32 @@ test("detectRuntime: prefers docker, falls back to podman, reports rootless, und
   const preferred = fakeEngine(() => ok("false"));
   await detectRuntime("podman", preferred.exec);
   assert.deepEqual(preferred.calls.map((c) => c.command), ["podman"], "an explicit choice is not second-guessed");
+});
+
+test("detectEngine: only Linux-containers engines are usable (docker OSType), podman is Linux, failures and missing OSType are rejected", async () => {
+  const dockerAs = (out: string, podman = fail()) => fakeEngine((_a, command) => (command === "docker" ? ok(out) : podman));
+  assert.deepEqual((await detectEngine("auto", dockerAs("linux|[name=seccomp]").exec)).usable, { runtime: "docker", rootless: false });
+
+  const win = await detectEngine("auto", dockerAs("windows|[]").exec);
+  assert.deepEqual(win, { nonLinux: "docker" }, "windows-mode docker is not usable");
+
+  const winThenPodman = await detectEngine("auto", dockerAs("windows|[]", ok("false")).exec);
+  assert.deepEqual(winThenPodman.usable, { runtime: "podman", rootless: false }, "auto skips windows-mode docker for podman");
+
+  assert.deepEqual(await detectEngine("auto", fakeEngine(fail).exec), {}, "info failure: nothing found");
+  for (const out of ["", "<no value>|[name=seccomp]", "[name=seccomp]"]) {
+    assert.equal((await detectEngine("auto", dockerAs(out).exec)).usable, undefined, `missing OSType: ${JSON.stringify(out)}`);
+  }
+  assert.equal(await detectRuntime("docker", dockerAs("windows|[]").exec), undefined);
+});
+
+test("resolveIsolation: windows-mode docker errors clearly for container and falls back with a note for auto", async () => {
+  const win = fakeEngine((_a, command) => (command === "docker" ? ok("windows|[]") : fail()));
+  await assert.rejects(resolveIsolation({ mode: "container", runtime: "auto" }, win.exec), /Windows-containers mode.*Linux containers/s);
+  const auto = await resolveIsolation({ mode: "auto", runtime: "auto" }, win.exec);
+  assert.equal(auto.info.level, "temp-dir");
+  assert.match(auto.notes[0]!, /Windows-containers mode.*falling back to temp-dir/);
+  assert.ok(!win.calls.some((c) => c.args[0] === "pull"), "never tries to pull on an unusable engine");
 });
 
 test("ensureImage: pulls only when the image is missing, and fails loudly when the pull fails", async () => {
@@ -147,7 +173,7 @@ test("resolveIsolation: container without an engine is an error, auto falls back
 });
 
 test("resolveIsolation: container with an engine reports runtime and image and pulls it first", async () => {
-  const engine = fakeEngine((args) => (args[0] === "image" ? fail() : ok("false")));
+  const engine = fakeEngine((args) => (args[0] === "image" ? fail() : ok("linux|[name=seccomp]")));
   const resolved = await resolveIsolation({ mode: "container", runtime: "auto", image: "node:22" }, engine.exec);
   assert.deepEqual(resolved.info, { level: "container", runtime: "docker", image: "node:22" });
   assert.ok(engine.calls.some((c) => c.args[0] === "pull" && c.args.includes("node:22")));

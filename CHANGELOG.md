@@ -11,6 +11,9 @@ All notable changes to this project are documented here, in
 - `PackageManager` abstraction (`src/testrun/managers.ts`): frozen install (`yarn install --frozen-lockfile` / `--immutable`) and single-dependency probe (`yarn add name@ver --ignore-scripts` / `--mode=skip-build`) per manager, used by the isolation and bisect probes in `src/pipeline/real.ts`. A manager without a probe degrades to "not tested on its own", never a false safe. Ready for pnpm (#3).
 - Corpus: chalk 4.1.2 -> 5.3.0 through yarn classic (skipped when yarn is not installed).
 
+### Fixed
+- Container engine detection only accepts engines running Linux containers (docker must report `OSType` `linux`; podman is Linux). Docker in Windows-containers mode (e.g. GitHub `windows-latest` runners) is no longer picked: `--isolation auto` falls back to temp-dir with a note, `--isolation container` errors with how to switch to Linux containers, and real-engine tests skip.
+
 ### Changed
 - A lone `pnpm-lock.yaml` now errors with "pnpm lockfiles are not supported yet".
 
