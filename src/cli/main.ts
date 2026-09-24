@@ -27,6 +27,7 @@ export interface DepsFactoryOptions {
   oldLockfile: string;
   manager: ManagerSpec["name"];
   oldPackageJson?: string;
+  oldFiles?: Record<string, string | null>;
   isolation: ResolvedIsolation;
 }
 
@@ -58,11 +59,13 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
     const manifest = JSON.parse(await readFile(join(projectDir, "package.json"), "utf8"));
     const oldPackageJson = await readOldPackageJson(args, projectDir);
 
+    const workspaces = await discoverWorkspaces(projectDir);
+    const oldFiles = await readOldWorkspaceManifests(args, projectDir, workspaces.map((w) => w.dir));
+
     const isolation = await resolveIsolation({ mode: config.isolation, runtime: config.containerRuntime, image: config.containerImage, network: config.containerNetwork });
     for (const note of isolation.notes) io.err(`ratchet: ${note}`);
 
-    const deps = (makeDeps ?? defaultDeps(config, io.env))({ projectDir, oldLockfile, manager: manager.name, oldPackageJson, isolation });
-    const workspaces = await discoverWorkspaces(projectDir);
+    const deps = (makeDeps ?? defaultDeps(config, io.env))({ projectDir, oldLockfile, manager: manager.name, oldPackageJson, oldFiles, isolation });
     if (workspaces.length > 0) io.err(`ratchet: workspace project (${workspaces.length} packages); tests run via the root scripts.test only`);
     const report = await runPipeline({ oldLockfile, newLockfile, manifest, workspaces, oldPackageJson, config }, deps);
 
@@ -117,6 +120,21 @@ async function readOldPackageJson(args: ReturnType<typeof parseCliArgs>, project
   if (args.oldPackageJson) return readFile(args.oldPackageJson, "utf8");
   if (!args.base) return undefined;
   return readFileAtRef(projectDir, args.base, "package.json");
+}
+
+/**
+ * Workspace projects: the old lockfile only installs against the workspace manifests of its own time.
+ * --base reads them from git (absent there = a new workspace, removed in the old state); --old takes them from flags.
+ */
+async function readOldWorkspaceManifests(args: ReturnType<typeof parseCliArgs>, projectDir: string, dirs: string[]): Promise<Record<string, string | null> | undefined> {
+  if (dirs.length === 0) return undefined;
+  const files: Record<string, string | null> = {};
+  if (args.base) {
+    for (const dir of dirs) files[`${dir}/package.json`] = await readFileAtRef(projectDir, args.base, `${dir}/package.json`).catch(() => null);
+  } else if (args.oldWorkspacePackageJsons) {
+    for (const [dir, file] of Object.entries(args.oldWorkspacePackageJsons)) files[`${dir}/package.json`] = await readFile(file, "utf8");
+  } else return undefined;
+  return files;
 }
 
 function render(report: Report, format: OutputFormat): string {

@@ -32,6 +32,8 @@ export interface SandboxOptions {
   lockfile?: { name: string; content: string };
   /** Replaces the project's package.json, so an old lockfile is installed against its matching manifest. */
   packageJson?: string;
+  /** Project-relative files to overwrite (string) or delete (null) after the copy: the old state of workspace manifests. */
+  files?: Record<string, string | null>;
   /** Environment to filter; defaults to the real one. Exposed for tests. */
   sourceEnv?: NodeJS.ProcessEnv;
   /** Run installs and tests in a container instead of directly on the host. */
@@ -50,6 +52,10 @@ export async function withSandbox<T>(options: SandboxOptions, work: (sandbox: Sa
     await mkdir(paths.tmp, { recursive: true });
     await cp(options.projectDir, dir, { recursive: true, filter: (src) => !NOT_COPIED.has(basename(src)) });
     if (options.packageJson !== undefined) await writeFile(join(dir, "package.json"), options.packageJson);
+    for (const [file, content] of Object.entries(options.files ?? {})) {
+      if (content === null) await rm(join(dir, file), { force: true });
+      else await writeFile(join(dir, file), content);
+    }
     if (options.lockfile) await writeFile(join(dir, options.lockfile.name), options.lockfile.content);
 
     return await work(options.container ? containerSandbox(dir, root, options.container) : hostSandbox(dir, paths, options));

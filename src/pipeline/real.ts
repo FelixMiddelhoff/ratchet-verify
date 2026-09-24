@@ -13,6 +13,8 @@ export interface RealDepsOptions {
   /** Which manager owns the lockfile; npm when omitted. */
   manager?: PackageManager;
   oldPackageJson?: string;
+  /** Old state of the workspace package.json files (project-relative path -> text, null = did not exist). */
+  oldFiles?: Record<string, string | null>;
   config: Config;
   githubToken?: string;
   /** Resolved isolation; temp-dir when omitted. */
@@ -26,12 +28,12 @@ export function realDeps(options: RealDepsOptions): PipelineDeps {
   const container = options.isolation?.container;
   return {
     testLockfile: (content, packageJson) =>
-      withSandbox({ projectDir, packageJson, container, lockfile: { name: manager.lockfile, content } }, (sandbox) =>
+      withSandbox({ projectDir, packageJson, container, files: content === options.oldLockfile ? options.oldFiles : undefined, lockfile: { name: manager.lockfile, content } }, (sandbox) =>
         installAndTest(sandbox, { testTimeoutMs: config.testTimeoutMs }),
       ),
 
     testDependencyAt: (name, version, scope) =>
-      withSandbox({ projectDir, container, packageJson: options.oldPackageJson, lockfile: { name: manager.lockfile, content: options.oldLockfile } }, async (sandbox): Promise<TestOutcome> => {
+      withSandbox({ projectDir, container, files: options.oldFiles, packageJson: options.oldPackageJson, lockfile: { name: manager.lockfile, content: options.oldLockfile } }, async (sandbox): Promise<TestOutcome> => {
         const args = manager.pinDependency(name, version, options.oldLockfile, scope);
         // No safe single-dependency move for this manager: report it instead of guessing a verdict.
         // (install-failed makes the pipeline skip it: never cleared, never blamed on this dependency alone.)

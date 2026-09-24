@@ -55,12 +55,28 @@ async function runCase(testCase) {
       registry = await startRegistry(packages);
       writeFileSync(join(dir, ".npmrc"), `registry=${registry.url}/\n`);
     }
-    for (const [file, content] of Object.entries(testCase.files)) writeFileSync(join(dir, file), content);
+    for (const [file, content] of Object.entries(testCase.files)) {
+      mkdirSync(dirname(join(dir, file)), { recursive: true });
+      writeFileSync(join(dir, file), content);
+    }
+    if (testCase.workspace && testCase.manager === "pnpm") writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages:\n  - 'packages/*'\n");
     if (testCase.config) writeFileSync(join(dir, ".ratchetrc"), JSON.stringify(testCase.config));
 
     const { name, old: oldVersion, new: newVersion } = testCase.bump;
-    const writeManifest = (version) =>
-      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "corpus-case", version: "1.0.0", private: true, scripts: { test: "node test.js" }, dependencies: { [name]: version } }));
+    const writeManifest = (version) => {
+      if (!testCase.workspace) {
+        writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "corpus-case", version: "1.0.0", private: true, scripts: { test: "node test.js" }, dependencies: { [name]: version } }));
+        return;
+      }
+      // Workspace project: the bumped dependency is declared in packages/a only; the root just runs the suite.
+      const root = { name: "corpus-case", version: "1.0.0", private: true, scripts: { test: "node packages/a/test.js" } };
+      if (testCase.manager !== "pnpm") root.workspaces = ["packages/*"];
+      writeFileSync(join(dir, "package.json"), JSON.stringify(root));
+      mkdirSync(join(dir, "packages", "a"), { recursive: true });
+      mkdirSync(join(dir, "packages", "b"), { recursive: true });
+      writeFileSync(join(dir, "packages", "a", "package.json"), JSON.stringify({ name: "@corpus/a", version: "1.0.0", private: true, dependencies: { [name]: version } }));
+      writeFileSync(join(dir, "packages", "b", "package.json"), JSON.stringify({ name: "@corpus/b", version: "1.0.0", private: true }));
+    };
     // Lockfile-only installs: nothing from the corpus runs on this machine outside ratchet's sandbox.
     // (yarn cases use classic `yarn install --ignore-scripts`; the node_modules it writes stay in this temp dir.)
     const yarn = testCase.manager === "yarn";
@@ -72,6 +88,7 @@ async function runCase(testCase) {
     await relock();
     writeFileSync(join(dir, "old-lock.json"), readFileSync(join(dir, lockName)));
     writeFileSync(join(dir, "old-package.json"), readFileSync(join(dir, "package.json")));
+    if (testCase.workspace) writeFileSync(join(dir, "old-a-package.json"), readFileSync(join(dir, "packages", "a", "package.json")));
     writeManifest(newVersion);
     await relock();
 
@@ -79,7 +96,7 @@ async function runCase(testCase) {
     mkdirSync(home);
     if (testCase.fakeHomeNpmrc) writeFileSync(join(home, ".npmrc"), testCase.fakeHomeNpmrc);
     const run = await runRatchet(
-      [dir, "--old", join(dir, "old-lock.json"), "--old-package-json", join(dir, "old-package.json"), "--json", ...(testCase.isolation ? ["--isolation", testCase.isolation] : [])],
+      [dir, "--old", join(dir, "old-lock.json"), "--old-package-json", join(dir, "old-package.json"), ...(testCase.workspace ? ["--old-workspace-package-json", `packages/a=${join(dir, "old-a-package.json")}`] : []), "--json", ...(testCase.isolation ? ["--isolation", testCase.isolation] : [])],
       { ...process.env, ...testCase.env, HOME: home, USERPROFILE: home },
     );
     if (run.status !== 0 && run.status !== 1) return `ratchet exited ${run.status}: ${run.stderr.trim()}`;
@@ -92,6 +109,7 @@ async function runCase(testCase) {
     if (verdict.status !== expect.status) return `${verdict.name} is ${verdict.status}, expected ${expect.status}\n      ${verdict.summary}`;
     if (expect.confidence && verdict.confidence !== expect.confidence) return `confidence ${verdict.confidence}, expected ${expect.confidence}`;
     if (expect.summary && !expect.summary.test(verdict.summary)) return `summary "${verdict.summary}" does not match ${expect.summary}`;
+    if (expect.workspaces && JSON.stringify(verdict.workspaces?.declared) !== JSON.stringify(expect.workspaces)) return `workspaces.declared ${JSON.stringify(verdict.workspaces)}, expected ${JSON.stringify(expect.workspaces)}`;
     if (expect.isolation && report.isolation?.level !== expect.isolation) return `isolation ${report.isolation?.level}, expected ${expect.isolation}`;
     if (expect.evidenceKind && !verdict.evidence.some((e) => e.kind === expect.evidenceKind)) return `no ${expect.evidenceKind} evidence`;
 

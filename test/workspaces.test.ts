@@ -164,3 +164,32 @@ test("pipeline: per-workspace attribution in the report; usage in a sibling work
   const chalk = report.verdicts.find((v) => v.name === "chalk" && v.direct)!;
   assert.deepEqual(chalk.workspaces, { declared: ["@acme/a"], used: ["@acme/b"] });
 });
+
+test("args: --old-workspace-package-json is repeatable dir=file; malformed value is an error", async () => {
+  const { parseCliArgs } = await import("../src/cli/args.js");
+  const args = parseCliArgs(["--old", "l", "--old-workspace-package-json", "packages/a=x.json", "--old-workspace-package-json", String.raw`packages\b\=y.json`]);
+  assert.deepEqual(args.oldWorkspacePackageJsons, { "packages/a": "x.json", "packages/b": "y.json" });
+  assert.throws(() => parseCliArgs(["--old-workspace-package-json", "nofile"]), /<dir>=<file>/);
+});
+
+test("sandbox copies workspace packages (not node_modules) and applies old manifest files (overwrite/delete)", async () => {
+  const { withSandbox } = await import("../src/sandbox/index.js");
+  const { readFile } = await import("node:fs/promises");
+  const { existsSync } = await import("node:fs");
+  await withTempProject(
+    {
+      "package.json": "{}",
+      "packages/a/package.json": '{"v":"new"}',
+      "packages/a/src/i.ts": "x",
+      "packages/a/node_modules/dep/index.js": "x",
+      "packages/new/package.json": "{}",
+    },
+    (dir) =>
+      withSandbox({ projectDir: dir, files: { "packages/a/package.json": '{"v":"old"}', "packages/new/package.json": null } }, async (s) => {
+        assert.equal(await readFile(`${s.dir}/packages/a/package.json`, "utf8"), '{"v":"old"}');
+        assert.equal(existsSync(`${s.dir}/packages/a/src/i.ts`), true);
+        assert.equal(existsSync(`${s.dir}/packages/a/node_modules`), false);
+        assert.equal(existsSync(`${s.dir}/packages/new/package.json`), false);
+      }),
+  );
+});
