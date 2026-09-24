@@ -16,8 +16,16 @@ export interface UnparsedFile {
   file: string;
 }
 
+/** A file whose forwarding of the package could not be followed statically. */
+export interface UnresolvedFile {
+  file: string;
+  reason: string;
+}
+
 export interface UsageScan {
   sites: UsageSite[];
   /** Files with syntax errors: the scan is incomplete, so a verdict must not claim full coverage. */
   unparsed: UnparsedFile[];
+  /** Files that forward the package in a way the scanner could not follow: also incomplete coverage. */
+  unresolved?: UnresolvedFile[];
 }
