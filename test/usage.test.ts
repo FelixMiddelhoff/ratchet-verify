@@ -130,3 +130,145 @@ program.option("-d");`), [
     [2, "option", "member-access"],
   ]);
 });
+
+// ---- gap (b): local shadowing ------------------------------------------------
+
+test("shadowing: param named like the import is not package use", () => {
+  assert.deepEqual(scan(`import _ from "lib";\nfunction f(_) { return _.chunk(); }\n_.real();`), [
+    [1, "default", "import"],
+    [3, "real", "member-access"],
+  ]);
+});
+
+test("shadowing: block-scoped const/let and catch variable are not package use", () => {
+  assert.deepEqual(
+    scan(`import _ from "lib";\nfunction f() { const _ = mk(); _.a(); }\ntry {} catch (_) { _.b(); }\nfor (let _ of xs) { _.c(); }`),
+    [[1, "default", "import"]],
+  );
+});
+
+test("shadowing: a hoisted var in a nested block shadows the whole function", () => {
+  assert.deepEqual(scan(`import _ from "lib";\nfunction f() { if (x) { var _ = 1; } _.a(); }`), [[1, "default", "import"]]);
+});
+
+test("shadowing conservative: use before a let/const declaration, and eval scopes, still count", () => {
+  assert.deepEqual(scan(`import _ from "lib";\nfunction f() { _.early(); const _ = 1; }`), [
+    [1, "default", "import"],
+    [2, "early", "member-access"],
+  ]);
+  assert.deepEqual(scan(`import _ from "lib";\nfunction f(_) { eval("x"); _.a(); }`), [
+    [1, "default", "import"],
+    [2, "a", "member-access"],
+  ]);
+});
+
+test("shadowing conservative: shadowed-only namespace falls back to whole-module use", () => {
+  assert.deepEqual(scan(`import * as ns from "lib";\nfunction f(ns) { ns.x(); }`), [[1, "*", "import"]]);
+});
+
+test("shadowing: a require binding inside a function is not shadowed by itself", () => {
+  assert.deepEqual(scan(`function f() { const l = require("lib"); l.go(); }`), [[1, "go", "member-access"]]);
+});
+
+// ---- gap (c): CommonJS forwarding --------------------------------------------
+
+const project = async (files: Record<string, string>) =>
+  withTempProject(files, async (dir) => {
+    const r = await scanUsage(dir, "lib");
+    return { sites: r.sites.map((s) => `${s.file}:${s.line}:${s.symbol}:${s.kind}`), unresolved: r.unresolved ?? [] };
+  });
+
+test("cjs: module.exports = require(pkg) attributes importers' member use to pkg", async () => {
+  const r = await project({
+    "db.js": `module.exports = require("lib");`,
+    "app.js": `const db = require("./db");\ndb.connect();`,
+  });
+  assert.deepEqual(r.sites, ["app.js:2:connect:member-access", "db.js:1:*:require"]);
+  assert.deepEqual(r.unresolved, []);
+});
+
+test("cjs: exports.x = require(pkg).x forwards only x", async () => {
+  const r = await project({
+    "wrap.js": `exports.parse = require("lib").parse;`,
+    "app.js": `const { parse, other } = require("./wrap");`,
+  });
+  assert.deepEqual(r.sites, ["app.js:1:parse:require", "wrap.js:1:parse:require"]);
+});
+
+test("cjs: forwarding an unrelated module is a non-match", async () => {
+  const r = await project({
+    "u.js": `module.exports = require("./helpers");`,
+    "helpers.js": `module.exports = { a: 1 };`,
+    "app.js": `const u = require("./u");\nu.a();`,
+  });
+  assert.deepEqual(r.sites, []);
+  assert.deepEqual(r.unresolved, []);
+});
+
+test("cjs conservative: exports derived from the package in an unfollowable form are flagged", async () => {
+  const r = await project({
+    "w.js": `const l = require("lib");\nmodule.exports = wrap(l);`,
+  });
+  assert.equal(r.unresolved.length, 1);
+  assert.match(JSON.stringify(r.unresolved), /w\.js/);
+});
+
+test("cjs conservative: computed require path is flagged once a forwarder exists", async () => {
+  const r = await project({
+    "db.js": `module.exports = require("lib");`,
+    "loader.js": `module.exports = (n) => require(n);`,
+  });
+  assert.equal(r.unresolved.length, 1);
+});
+
+// ---- gap (a): re-exports through own modules ---------------------------------
+
+test("re-export chain: importer of own module is attributed to pkg", async () => {
+  const r = await project({
+    "db.ts": `export { default as db, connect } from "lib";`,
+    "mid.ts": `export * from "./db";`,
+    "app.ts": `import { db, connect as c } from "./mid.js";\ndb.query();`,
+  });
+  assert.deepEqual(r.sites, [
+    "app.ts:1:connect:import",
+    "app.ts:1:default:import",
+    "app.ts:2:query:member-access",
+    "db.ts:1:connect:re-export",
+    "db.ts:1:default:re-export",
+  ]);
+});
+
+test("re-export: local import-then-export and namespace access resolve", async () => {
+  const r = await project({
+    "a.ts": `import * as l from "lib";\nexport { l as lib };\nexport const run = l.run;`,
+    "b.ts": `import { lib, run } from "./a";\nlib.go();`,
+  });
+  assert.ok(r.sites.includes("b.ts:1:run:import"));
+  assert.ok(r.sites.some((s) => s.startsWith("b.ts:2:go")) || r.sites.includes("b.ts:1:*:import"));
+});
+
+test("re-export: names the own module does not forward are non-matches", async () => {
+  const r = await project({
+    "a.ts": `export { one } from "lib";\nexport const two = 2;`,
+    "b.ts": `import { two } from "./a";`,
+  });
+  assert.deepEqual(r.sites, ["a.ts:1:one:re-export"]);
+});
+
+test("re-export conservative: namespace of a forwarder used whole is a wildcard", async () => {
+  const r = await project({
+    "a.ts": `export * from "lib";`,
+    "b.ts": `import * as everything from "./a";\nregister(everything);`,
+  });
+  assert.deepEqual(r.sites, ["a.ts:1:*:re-export", "b.ts:1:*:import"]);
+});
+
+test("re-export cycle terminates", async () => {
+  const r = await project({
+    "a.ts": `export * from "./b";\nexport { x } from "lib";`,
+    "b.ts": `export * from "./a";`,
+    "c.ts": `import { x } from "./b";`,
+  });
+  assert.ok(r.sites.includes("c.ts:1:x:import"));
+  assert.deepEqual(r.unresolved, []);
+});
