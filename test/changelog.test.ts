@@ -57,7 +57,7 @@ test("repository field: monorepo directory kept, non-GitHub and empty rejected",
     repo: "r",
     directory: "packages/lib",
   });
-  assert.equal(normalizeRepository("https://gitlab.com/o/r"), undefined);
+  assert.equal(normalizeRepository("https://example.com/o/r"), undefined);
   assert.equal(normalizeRepository(undefined), undefined);
   assert.equal(normalizeRepository({}), undefined);
 });
@@ -149,7 +149,7 @@ test("no repository metadata: reported, not thrown", async () => {
   const http = fakeFetch({ [REGISTRY]: packument(undefined) });
   const result = await fetchChangelog({ ...req, fetch: http });
   assert.equal(result.source, "none");
-  assert.ok(result.notes.some((n) => n.includes("No GitHub repository")));
+  assert.ok(result.notes.some((n) => n.includes("No supported repository")));
 });
 
 test("registry failure and network error are notes, not exceptions", async () => {
