@@ -17,6 +17,11 @@ async function withWorld(body: (w: World) => Promise<void>, opts: WorldOptions =
   }
 }
 
+// BOUNDARY (do not implement here, phase 4): yarn classic reads `resolved` URLs from an EXISTING yarn.lock and fetches them
+// verbatim, so a lock written against the original registry host still needs its `resolved` host rewritten in the sandbox copy
+// (same for npm locks without replace-registry-host=always, and for lock entries with non-standard layouts). What the proxy
+// guarantees is the other half: every URL it hands out itself (packument dist.tarball) already points back at it, so a lock
+// GENERATED through the proxy is host-clean. The real-client matrix in ratchet-proxy-compat.md records both cases.
 const INTEG = "sha512-AAAA";
 const SHASUM = "0123456789abcdef0123456789abcdef01234567";
 

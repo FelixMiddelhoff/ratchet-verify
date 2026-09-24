@@ -420,3 +420,27 @@ describe("D8: audit entries (rich, sanitised, never raw attacker text)", () => {
       { config: (b) => ({ ...b, registries: [{ id: "main", default: true, upstream: "https://registry.test", credential: { type: "bearer", secret: CANARY } }, { id: "art", upstream: "https://evil.test" }] }) },
     ));
 });
+
+describe("D10: documented behaviours (pinned so a change is a conscious decision)", () => {
+  test("Range requests are answered with the full body (200, no Content-Range); the upstream never sees Range", () =>
+    withWorld(async (w) => {
+      w.registry.handler = (q, res) => {
+        res.writeHead(q.headers.range ? 206 : 200, { "content-type": "application/octet-stream", "accept-ranges": "bytes" });
+        res.end("0123456789");
+      };
+      const r = await get(w.proxy.port, "/left-pad/-/left-pad-1.0.0.tgz", { range: "bytes=0-3" });
+      assert.equal(r.status, 200);
+      assert.equal(r.body, "0123456789");
+      assert.equal(r.headers["content-range"], undefined);
+      assert.equal(r.headers["accept-ranges"], undefined);
+      assert.equal(w.registry.hits[0]?.headers.range, undefined);
+    }));
+
+  test("npm audit (POST bulk advisories) and /-/ping are denied by design; the phase-4 npmrc sets audit=false", () =>
+    withWorld(async (w) => {
+      assert.equal((await get(w.proxy.port, "/-/npm/v1/security/advisories/bulk", { "content-length": "0" }, "POST")).status, 405);
+      assert.equal((await get(w.proxy.port, "/-/ping")).status, 403);
+      assert.equal(w.registry.hits.length, 0);
+      assert.deepEqual(w.proxy.audit().map((e) => [e.reason]), [["method-not-allowed"], ["npm-api-path"]]);
+    }));
+});
