@@ -114,6 +114,8 @@ export interface RunArgsInput {
   user?: string;
   /** No network at all inside the container (`--network none`): nothing can be sent or fetched. */
   offline?: boolean;
+  /** Attach to this named (internal) network instead of the default one (registry-proxy topology). Exclusive with `offline`. */
+  network?: string;
 }
 
 /**
@@ -122,6 +124,7 @@ export interface RunArgsInput {
  */
 export function buildRunArgs(input: RunArgsInput): string[] {
   const { settings, root } = input;
+  if (input.network !== undefined && input.offline) throw new Error("buildRunArgs: network and offline are mutually exclusive");
   if (root.includes(",")) throw new Error(`sandbox path contains a comma, which container mounts cannot express: ${root}`);
   const relabel = settings.runtime === "podman" ? ",relabel=private" : ""; // SELinux hosts need it for bind mounts
   const env = Object.entries(buildContainerEnv()).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
@@ -134,6 +137,7 @@ export function buildRunArgs(input: RunArgsInput): string[] {
     "--security-opt", "no-new-privileges",
     "--pids-limit", "1024",
     ...(input.offline ? ["--network", "none"] : []),
+    ...(input.network !== undefined ? ["--network", input.network] : []),
     ...(input.user ? ["--user", input.user] : []),
     ...env,
     settings.image,
