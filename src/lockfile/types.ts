@@ -1,6 +1,8 @@
 export interface InstalledPackage {
   name: string;
   version: string;
+  /** Names the root manifest may use for this package (yarn/npm `alias@npm:real`). */
+  aliases?: string[];
 }
 
 /** Installed packages keyed by install path, e.g. "node_modules/a/node_modules/b". */

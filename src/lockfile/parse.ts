@@ -1,4 +1,5 @@
 import type { InstalledPackages } from "./types.js";
+import { parseYarnLock } from "./yarn.js";
 
 const NODE_MODULES = "node_modules/";
 
@@ -14,6 +15,8 @@ interface RawLockfile {
 }
 
 export function parseLockfile(text: string): InstalledPackages {
+  // Yarn lockfiles are not JSON; npm's always start with an object.
+  if (!text.trimStart().startsWith("{")) return parseYarnLock(text);
   const lock = JSON.parse(text) as RawLockfile;
   // v2 carries both trees; the flat `packages` map is authoritative when present.
   if (lock.packages) return fromPackagesMap(lock.packages);
