@@ -11,7 +11,7 @@ export interface PinScope {
   /** The project has workspaces: root-level add commands need the manager's "workspace root" flag. */
   workspaceProject?: boolean;
   /** The one workspace declaring the dependency; unset = the root manifest declares it. */
-  workspace?: { name: string; dir: string };
+  workspace?: { name: string; dir: string; /** No `name` in its package.json: `name` is only the directory. */ unnamed?: boolean };
   /** Several manifests declare it: one command cannot move them all consistently, so it is not tested alone. */
   ambiguous?: boolean;
 }
@@ -42,7 +42,8 @@ export const MANAGERS: ManagerSpec[] = [
     // In a workspace project the target manifest is named: `--filter <pkg>` or `-w` (root).
     pinDependency: (name, version, _text, scope) => {
       if (scope?.ambiguous) return undefined;
-      const target = scope?.workspace ? ["--filter", scope.workspace.name] : scope?.workspaceProject ? ["-w"] : [];
+      // An unnamed workspace is selected by path (`./dir`), which pnpm's --filter accepts.
+      const target = scope?.workspace ? ["--filter", scope.workspace.unnamed ? `./${scope.workspace.dir}` : scope.workspace.name] : scope?.workspaceProject ? ["-w"] : [];
       return ["add", `${name}@${version}`, ...target, "--lockfile-only", "--ignore-scripts"];
     },
   },
@@ -57,6 +58,8 @@ export const MANAGERS: ManagerSpec[] = [
       if (scope?.ambiguous) return undefined;
       const berry = detectYarnFlavor(text) === "berry";
       const flags = berry ? ["--mode=skip-build"] : ["--ignore-scripts"];
+      // `yarn workspace` takes a package name only: an unnamed workspace cannot be targeted, so it is not tested alone.
+      if (scope?.workspace?.unnamed) return undefined;
       if (scope?.workspace) return ["workspace", scope.workspace.name, "add", `${name}@${version}`, ...flags];
       return ["add", `${name}@${version}`, ...(scope?.workspaceProject && !berry ? ["-W"] : []), ...flags];
     },

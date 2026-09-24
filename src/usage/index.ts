@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join, posix, relative, sep } from "node:path";
 import { discoverWorkspaces } from "../workspaces/index.js";
 import type { WorkspaceManifest } from "../lockfile/types.js";
@@ -10,6 +10,8 @@ export { scanSource };
 export type * from "./types.js";
 
 const SOURCE_FILE = /\.(js|jsx|mjs|cjs|ts|tsx|mts|cts)$/;
+/** Vue/Svelte/Astro single-file components and MDX import packages too, but ratchet has no parser for them. */
+const NOT_SCANNED_FILE = /\.(vue|svelte|astro|mdx)$/;
 const DECLARATION_FILE = /\.d\.(ts|mts|cts)$/;
 const SKIPPED_DIRS = new Set(["node_modules", ".git"]);
 const CONFIG_FILE = /^(tsconfig[\w.-]*|jsconfig)\.json$/;
@@ -36,6 +38,8 @@ export async function scanUsage(projectDir: string, packageName: string, workspa
     workspaces ?? (await discoverWorkspaces(projectDir)),
   );
   unresolved.push(...resolver.configProblems());
+  for (const path of listing.notScanned) unresolved.push({ file: relative(projectDir, path).split(sep).join("/"), reason: "file type not scanned" });
+  for (const path of listing.links) unresolved.push({ file: relative(projectDir, path).split(sep).join("/"), reason: "symlinked directory not followed" });
 
   // Files that re-export the package (directly or via other project files) make their importers package users.
   // Iterate to a fixpoint so chains of own modules resolve; forwards only grow, so this terminates quickly.
@@ -102,17 +106,41 @@ function mergeForwards(candidates: (Forward | undefined)[]): Forward | undefined
   return merged;
 }
 
-async function listFiles(dir: string): Promise<{ sources: string[]; configs: string[] }> {
-  const out = { sources: [] as string[], configs: [] as string[] };
+interface Listing {
+  sources: string[];
+  configs: string[];
+  /** Files that can import packages but are never parsed (single-file components, MDX). */
+  notScanned: string[];
+  /** Directory links (symlinks/junctions): not followed, so what is behind them was not scanned. */
+  links: string[];
+}
+
+async function listFiles(dir: string): Promise<Listing> {
+  const out: Listing = { sources: [], configs: [], notScanned: [], links: [] };
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
+    if (SKIPPED_DIRS.has(entry.name) && (entry.isDirectory() || entry.isSymbolicLink())) continue;
+    if (entry.isSymbolicLink() && (await isDirectoryLink(path))) {
+      out.links.push(path);
+      continue;
+    }
     if (entry.isDirectory()) {
-      if (SKIPPED_DIRS.has(entry.name)) continue;
       const inner = await listFiles(path);
       out.sources.push(...inner.sources);
       out.configs.push(...inner.configs);
+      out.notScanned.push(...inner.notScanned);
+      out.links.push(...inner.links);
     } else if (CONFIG_FILE.test(entry.name)) out.configs.push(path);
     else if (SOURCE_FILE.test(entry.name) && !DECLARATION_FILE.test(entry.name)) out.sources.push(path);
+    else if (NOT_SCANNED_FILE.test(entry.name)) out.notScanned.push(path);
   }
   return out;
+}
+
+async function isDirectoryLink(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false; // dangling link: nothing behind it
+  }
 }

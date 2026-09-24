@@ -92,20 +92,15 @@ export class SpecifierResolver {
 
   private viaPaths(o: ModuleOptions, specifier: string): { files: string[]; checked: boolean } | undefined {
     if (!o.paths) return undefined;
-    let best: { key: string; star: string } | undefined;
-    for (const key of Object.keys(o.paths)) {
-      const star = key.indexOf("*");
-      if (star === -1) {
-        if (key === specifier) return this.tryTargets(o, o.paths[key]!, "");
-        continue;
-      }
-      const prefix = key.slice(0, star);
-      const suffix = key.slice(star + 1);
-      if (specifier.length >= prefix.length + suffix.length && specifier.startsWith(prefix) && specifier.endsWith(suffix) && (!best || prefix.length > best.key.indexOf("*"))) {
-        best = { key, star: specifier.slice(prefix.length, specifier.length - suffix.length) };
+    const index = pathsIndex(o.paths);
+    if (index.exact.has(specifier)) return this.tryTargets(o, o.paths[specifier]!, "");
+    // TypeScript: the wildcard key with the longest matching prefix wins. Probe the specifier's prefixes longest first.
+    for (let len = specifier.length; len >= 0; len--) {
+      for (const { key, suffix } of index.wild.get(specifier.slice(0, len)) ?? []) {
+        if (specifier.length >= len + suffix.length && specifier.endsWith(suffix)) return this.tryTargets(o, o.paths[key]!, specifier.slice(len, specifier.length - suffix.length));
       }
     }
-    return best ? this.tryTargets(o, o.paths[best.key]!, best.star) : undefined;
+    return undefined;
   }
 
   private tryTargets(o: ModuleOptions, targets: string[], star: string): { files: string[]; checked: boolean } {
@@ -170,6 +165,31 @@ export class SpecifierResolver {
     }
     return this.manifests.get(dir);
   }
+}
+
+interface PathsIndex {
+  exact: Set<string>;
+  /** Wildcard keys by their prefix (text before the `*`), so lookups cost O(specifier length), not O(keys). */
+  wild: Map<string, { key: string; suffix: string }[]>;
+}
+
+const indexes = new WeakMap<object, PathsIndex>();
+
+function pathsIndex(paths: Record<string, string[]>): PathsIndex {
+  let index = indexes.get(paths);
+  if (!index) {
+    index = { exact: new Set(), wild: new Map() };
+    for (const key of Object.keys(paths)) {
+      const star = key.indexOf("*");
+      if (star === -1) index.exact.add(key);
+      else {
+        const prefix = key.slice(0, star);
+        index.wild.set(prefix, [...(index.wild.get(prefix) ?? []), { key, suffix: key.slice(star + 1) }]);
+      }
+    }
+    indexes.set(paths, index);
+  }
+  return index;
 }
 
 /** Every string target an `exports` field can give for `subpath` (all conditions: any could be the one that loads). */

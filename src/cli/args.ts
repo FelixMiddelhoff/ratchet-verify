@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import { confinementProblem } from "../sandbox/confine.js";
 
 export type OutputFormat = "text" | "json" | "sarif" | "markdown";
 
@@ -91,7 +92,10 @@ export function parseCliArgs(argv: string[]): CliArgs {
   for (const pair of values["old-workspace-package-json"] ?? []) {
     const eq = pair.indexOf("=");
     if (eq < 1) throw new Error(`--old-workspace-package-json expects <dir>=<file>, got "${pair}"`);
-    oldWorkspacePackageJsons[pair.slice(0, eq).replaceAll("\\", "/").replace(/\/$/, "")] = pair.slice(eq + 1);
+    const key = pair.slice(0, eq);
+    const problem = confinementProblem(key);
+    if (problem) throw new Error(`--old-workspace-package-json directory "${key}" ${problem}; it must be a project-relative workspace directory (paths outside the project are refused)`);
+    oldWorkspacePackageJsons[key.replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/$/, "")] = pair.slice(eq + 1);
   }
 
   return {

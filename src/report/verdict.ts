@@ -171,7 +171,7 @@ function gatherGaps(a: DependencyAssessment, base: PartialBase): { caveats: stri
   }
   if ((a.usage.unresolved ?? []).length > 0) {
     caveats.push(
-      `usage scan incomplete: could not follow how ${(a.usage.unresolved ?? []).map((f) => `${f.file} (${f.reason})`).join(", ")} forward the package`,
+      `usage scan incomplete: could not fully scan or follow: ${(a.usage.unresolved ?? []).map((f) => `${f.file} (${f.reason})`).join(", ")}`,
     );
   }
   if (a.change.direct && a.usage.sites.length === 0 && !isRemoved) {

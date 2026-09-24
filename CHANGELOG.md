@@ -10,6 +10,16 @@ All notable changes to this project are documented here, in
 - Usage scanner (#35): tsconfig/jsconfig `paths` and `baseUrl` (all configs above a file, `extends` chains incl. node_modules packages, JSONC via the TypeScript API, cycles guarded) and workspace package names/subpaths (`exports`, `module`/`main`, `dist`->`src`, `src/index`) resolve to project files, so re-exports through them are followed. Unlocatable targets (matching alias without a file, unreadable/missing `extends`, unparseable tsconfig, workspace entry not found, `#imports`) go to `UsageScan.unresolved` and downgrade safe to safe (partial).
 - Corpus: chalk 4.1.2 -> 5.3.0 in a workspace package via npm, yarn classic and pnpm; lodash 4.17.20 -> 4.17.21 in a workspace package.
 
+### Fixed
+- Security: sandbox `files` keys are confined to the sandbox (absolute paths, drive letters, UNC, `..` and links pointing outside are refused; validated in `withSandbox` and at the CLI for `--old-workspace-package-json`). Before, a key like `../../x/package.json` could delete or overwrite a host file.
+- Security: workspace patterns with `..`, absolute paths or drive letters, and workspace directories whose real path leaves the project, are ignored (with a note); `--old-workspace-package-json <dir>` must name a discovered workspace and an unreadable file is a clear error.
+- Workspace globs: repeated `**` no longer blows up (12 `**` segments took 30 s); `\` in patterns is normalised; `node_modules` is never a workspace.
+- `pnpm-workspace.yaml`: `packages:` items at column 0, quoted flow lists containing commas, multi-line flow lists and explicit `[]` are read correctly; a file that yields no packages is announced.
+- pnpm workspaces with importers on different versions of one package: only the root importer's version keeps the plain path, other copies are keyed by major, so a bump of one importer's copy pairs up (was removed+added, unattributed) and is attributed to the importers that resolve that copy.
+- `--base` now enumerates workspaces at the base ref (old `workspaces` globs, old `pnpm-workspace.yaml`): a removed workspace is restored and an added one deleted in the old state. Only "path not in the base tree" means absent; any other git failure is an error. Paths are read relative to the project directory (a project in a repo subdirectory works).
+- Unnamed workspaces: `pnpm --filter ./<dir>`, `npm -w <dir>`, yarn is not tested on its own (needs a name); a workspace literally named `(root)` no longer collides with the root manifest label.
+- Usage scan: `.vue`, `.svelte`, `.astro`, `.mdx` files and symlinked directories are reported in `unresolved` ("file type not scanned", "symlinked directory not followed") so a verdict is "safe (partial)" instead of a false "safe"; tsconfig `paths` lookup is indexed (a 200k-key config no longer takes minutes).
+
 ## [0.4.0] - 2026-09-24
 
 ### Documentation

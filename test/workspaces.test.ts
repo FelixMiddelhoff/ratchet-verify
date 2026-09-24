@@ -94,7 +94,7 @@ packages:
     resolution: {integrity: sha512-c}
 `;
 
-test("pnpm importers: every importer counts; two chalk versions: workspace-a's keeps the plain path", () => {
+test("pnpm importers: every importer counts; two chalk versions: both keyed by major (root does not use it)", () => {
   const changes = diffLockfileTexts(pnpmLock("4.0.0"), pnpmLock("4.1.0"), {}, ws);
   assert.deepEqual(changes.map((c) => [c.name, c.direct, c.oldVersion, c.newVersion]), [["chalk", true, "4.0.0", "4.1.0"]]);
 });

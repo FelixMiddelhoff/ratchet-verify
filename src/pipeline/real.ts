@@ -21,6 +21,11 @@ export interface RealDepsOptions {
   isolation?: ResolvedIsolation;
 }
 
+/** The old workspace manifests belong to the old lockfile only: applying them to the new lockfile's install would test the wrong state. */
+export function oldFilesFor(options: Pick<RealDepsOptions, "oldLockfile" | "oldFiles">, lockfileContent: string): Record<string, string | null> | undefined {
+  return lockfileContent === options.oldLockfile ? options.oldFiles : undefined;
+}
+
 /** Sandbox-backed implementations of the pipeline's side effects. */
 export function realDeps(options: RealDepsOptions): PipelineDeps {
   const { projectDir, config } = options;
@@ -28,7 +33,7 @@ export function realDeps(options: RealDepsOptions): PipelineDeps {
   const container = options.isolation?.container;
   return {
     testLockfile: (content, packageJson) =>
-      withSandbox({ projectDir, packageJson, container, files: content === options.oldLockfile ? options.oldFiles : undefined, lockfile: { name: manager.lockfile, content } }, (sandbox) =>
+      withSandbox({ projectDir, packageJson, container, files: oldFilesFor(options, content), lockfile: { name: manager.lockfile, content } }, (sandbox) =>
         installAndTest(sandbox, { testTimeoutMs: config.testTimeoutMs }),
       ),
 

@@ -7,6 +7,7 @@ import { buildReport, type DependencyAssessment, type Report } from "../report/i
 import type { IsolationInfo } from "../sandbox/index.js";
 import type { PinScope } from "../testrun/managers.js";
 import type { TestOutcome } from "../testrun/index.js";
+import { ROOT_LABEL, workspaceLabel } from "../lockfile/labels.js";
 import { workspaceOfFile } from "../workspaces/index.js";
 import type { UsageScan } from "../usage/index.js";
 
@@ -150,14 +151,17 @@ function pinScope(change: DependencyChange, workspaces: WorkspaceManifest[] = []
   if (workspaces.length === 0) return undefined;
   const declared = change.declaredIn ?? [];
   if (declared.length > 1) return { workspaceProject: true, ambiguous: true };
-  const owner = workspaces.find((w) => w.name === declared[0]);
-  return owner ? { workspaceProject: true, workspace: { name: owner.name, dir: owner.dir } } : { workspaceProject: true };
+  const owner = workspaces.find((w) => workspaceLabel(w) === declared[0]);
+  return owner ? { workspaceProject: true, workspace: { name: owner.name, dir: owner.dir, ...(owner.unnamed ? { unnamed: true } : {}) } } : { workspaceProject: true };
 }
 
 /** Which workspaces declare the dependency and which contain its call sites (workspace projects only). */
 function workspaceInfo(s: Signals, workspaces: WorkspaceManifest[] = []): Pick<DependencyAssessment, "workspaces"> {
   if (workspaces.length === 0) return {};
   const used = new Set<string>();
-  for (const site of s.usage.sites) used.add(workspaceOfFile(site.file, workspaces)?.name ?? "(root)");
+  for (const site of s.usage.sites) {
+    const owner = workspaceOfFile(site.file, workspaces);
+    used.add(owner ? workspaceLabel(owner) : ROOT_LABEL);
+  }
   return { workspaces: { declared: s.change.declaredIn ?? [], used: [...used].sort() } };
 }

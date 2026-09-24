@@ -220,12 +220,23 @@ machines either way. Details: [docs/configuration.md](docs/configuration.md#isol
   test run is the **root** `scripts.test` only: per-workspace test scripts are
   not run, and a root without `scripts.test` is "risky (unverified)" even when
   workspaces have tests. A single-dependency probe edits the one workspace that
-  declares the dependency (`npm -w`, `yarn workspace`, `pnpm --filter`); when
-  several manifests declare it, it is not tested on its own. With `--base`,
-  the old workspace `package.json` files are read from git; with `--old` pass
-  `--old-workspace-package-json <dir>=<file>` (otherwise the baseline install
-  sees the current workspace manifests and may fail as "baseline-failing").
-  Workspace globs support literal paths, `*` and `**` (not brace sets).
+  declares the dependency (`npm -w <dir>`, `yarn workspace <name>`,
+  `pnpm --filter <name>` or `--filter ./<dir>` for an unnamed workspace); when
+  several manifests declare it, or a yarn workspace has no `name`, it is not
+  tested on its own. With `--base`, the workspaces of the base ref are
+  enumerated from git (old `workspaces` globs and old `pnpm-workspace.yaml`):
+  a removed workspace is restored (its `package.json`), an added one deleted.
+  With `--old` pass `--old-workspace-package-json <dir>=<file>` (`<dir>` must be
+  a discovered workspace; the file is whatever you choose, it becomes that
+  workspace's `package.json` in the sandbox), otherwise the baseline install
+  sees the current workspace manifests and may fail as "baseline-failing".
+  Workspace globs support literal paths, `*` and `**` (not brace sets);
+  patterns with `..`, absolute paths or drive letters, and directories that
+  resolve (via links) outside the project, are ignored with a note.
+- **Sandbox path confinement.** Files ratchet writes into the sandbox for the
+  old state (workspace manifests, `pnpm-workspace.yaml`) must stay inside the
+  sandbox: absolute paths, drive letters, UNC paths and `..` segments are
+  refused, and a link inside the project cannot redirect a write outside it.
 - **Usage scanner and aliases.** Re-exports are followed through relative
   paths, tsconfig/jsconfig `compilerOptions.paths` and `baseUrl` (nearest and
   parent configs, `extends`, comments and trailing commas), and workspace
@@ -233,7 +244,9 @@ machines either way. Details: [docs/configuration.md](docs/configuration.md#isol
   or `src/index`). Anything that may hide a re-export but cannot be located (an
   alias matching no scanned file, an unreadable or missing `extends`, a
   workspace entry not found, `#imports`) is reported as unresolved and
-  downgrades "safe" to "safe (partial)". Not evaluated: `include`/`exclude`,
+  downgrades "safe" to "safe (partial)". So do `.vue`, `.svelte`, `.astro` and
+  `.mdx` files (imports in them are never scanned: "file type not scanned")
+  and symlinked directories (not followed). Not evaluated: `include`/`exclude`,
   `rootDirs`, bundler-only aliases (webpack/vite `resolve.alias`), which are
   not seen as aliases at all.
 - **Changelog matching is by identifier**, so common words (`option`,
