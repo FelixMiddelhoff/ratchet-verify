@@ -25,6 +25,10 @@ for (const testCase of cases.filter((c) => !filter || c.name.includes(filter))) 
     console.log(`skip  ${testCase.name} (no container engine)`);
     continue;
   }
+  if (testCase.manager === "yarn" && spawnSync("yarn", ["--version"], { stdio: "ignore", shell: isWindows }).status !== 0) {
+    console.log(`skip  ${testCase.name} (yarn not installed)`);
+    continue;
+  }
   const started = Date.now();
   let failure;
   try {
@@ -58,11 +62,14 @@ async function runCase(testCase) {
     const writeManifest = (version) =>
       writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "corpus-case", version: "1.0.0", private: true, scripts: { test: "node test.js" }, dependencies: { [name]: version } }));
     // Lockfile-only installs: nothing from the corpus runs on this machine outside ratchet's sandbox.
-    const relock = () => npm(["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"], dir);
+    // (yarn cases use classic `yarn install --ignore-scripts`; the node_modules it writes stay in this temp dir.)
+    const yarn = testCase.manager === "yarn";
+    const lockName = yarn ? "yarn.lock" : "package-lock.json";
+    const relock = () => (yarn ? yarnInstall(dir) : npm(["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"], dir));
 
     writeManifest(oldVersion);
     await relock();
-    writeFileSync(join(dir, "old-lock.json"), readFileSync(join(dir, "package-lock.json")));
+    writeFileSync(join(dir, "old-lock.json"), readFileSync(join(dir, lockName)));
     writeFileSync(join(dir, "old-package.json"), readFileSync(join(dir, "package.json")));
     writeManifest(newVersion);
     await relock();
@@ -104,6 +111,14 @@ function npm(args, cwd) {
   const argv = isWindows ? ["/d", "/s", "/c", `npm ${args.join(" ")}`] : args;
   return new Promise((resolve, reject) => {
     execFile(command, argv, { cwd }, (error, _stdout, stderr) => (error ? reject(new Error(`npm ${args[0]} failed: ${stderr.trim()}`)) : resolve()));
+  });
+}
+
+function yarnInstall(cwd) {
+  const command = isWindows ? "cmd.exe" : "yarn";
+  const argv = isWindows ? ["/d", "/s", "/c", "yarn install --ignore-scripts"] : ["install", "--ignore-scripts"];
+  return new Promise((resolve, reject) => {
+    execFile(command, argv, { cwd }, (error, _stdout, stderr) => (error ? reject(new Error(`yarn install failed: ${stderr.trim()}`)) : resolve()));
   });
 }
 

@@ -56,8 +56,9 @@ RISKY  commander 8.3.0 -> 9.0.0 (direct)
 
 ## Quick start
 
-Requirements: Node.js 24 or newer, npm, git, and an npm project with a
-`package-lock.json` (lockfile version 1, 2 or 3).
+Requirements: Node.js 24 or newer, git, and a project with a `package-lock.json`
+(npm, lockfile version 1, 2 or 3) or a `yarn.lock` (yarn classic v1 or berry
+v2+), plus that package manager on PATH. pnpm is not supported yet.
 
 ```
 npm install -g ratchet-verify        # or run it with: npx ratchet-verify
@@ -65,8 +66,8 @@ cd /path/to/your/project             # a git repo with the bump applied
 ratchet-verify . --base main         # the short alias `ratchet` works too
 ```
 
-`--base main` compares the working tree's `package-lock.json` with the one
-on `main`. Exit code `0` means ok, `1` means a verdict at or above
+`--base main` compares the working tree's `package-lock.json` (or `yarn.lock`)
+with the one on `main`. Exit code `0` means ok, `1` means a verdict at or above
 `--fail-on` (default `broken`), `2` means a usage or runtime error.
 
 More in [docs/](docs/README.md): a [two-minute demo and tutorial](docs/tutorial.md)
@@ -128,7 +129,7 @@ Details and every caveat: [docs/verdicts.md](docs/verdicts.md).
 ```
 ratchet-verify [project-dir] (--base <git-ref> | --old <lockfile>) [options]
 
-  --base <ref>        compare against package-lock.json at this git ref
+  --base <ref>        compare against the lockfile (package-lock.json or yarn.lock) at this git ref
   --old <file>        compare against this lockfile instead of a git ref
   --old-package-json <file>  package.json that goes with --old
   --new <file>        lockfile with the proposed bump (default: project's)
@@ -205,8 +206,10 @@ machines either way. Details: [docs/configuration.md](docs/configuration.md#isol
   full-confidence "safe", and the sandbox at least withholds your credentials.
 - **Only as good as your tests.** No `scripts.test` means "risky
   (unverified)", never "safe".
-- **npm and `package-lock.json` only** for now. Yarn and pnpm lockfiles are
-  not diffed; Python and other ecosystems don't exist yet; monorepo
+- **npm (`package-lock.json`) and yarn (`yarn.lock`, classic and berry)
+  only.** pnpm lockfiles are not diffed; for yarn, git/file/workspace
+  entries are skipped and several versions of one name are tracked per range;
+  Python and other ecosystems don't exist yet; monorepo
   workspaces aren't understood.
 - **Changelog matching is by identifier**, so common words (`option`,
   `parse`) can match an unrelated breaking note. False positives cost a
@@ -231,9 +234,13 @@ safe to merge, and why.
 **Does it change my project?** No. It reads your lockfiles and source, and
 installs and tests inside a temporary copy that is deleted afterwards.
 
-**Which package manager runs the install?** `npm ci`, then your own
-`scripts.test`. The test runner also recognises yarn and pnpm lockfiles, but
-only `package-lock.json` is diffed today (see Help wanted).
+**Which package manager runs the install?** The one that owns your lockfile:
+`npm ci`, `yarn install --frozen-lockfile` (classic) or `yarn install --immutable`
+(berry), then your own `scripts.test`. The yarn version must be on PATH (berry
+projects that commit `.yarn/releases` use it via `yarnPath`). Single-dependency
+probes (used to isolate and bisect a failure) use `npm install name@ver
+--package-lock-only`, or `yarn add name@ver --ignore-scripts` / `--mode=skip-build`.
+A manager without such a probe is reported as "not tested on its own", never as safe.
 
 **Will it call an outdated dependency "broken"?** Only when the tests fail
 (or hang, or the install fails) on the new version and pass on the old one.
@@ -258,12 +265,10 @@ duplicate effort; small fixes can go straight to a pull request.
 - **Registry-only egress for the install phase.** Tests already run offline in
   container mode; installs still have the whole network. An allowlisting proxy
   (issue #23 follow-up) would close that.
-- **Yarn and pnpm lockfile support.** Parse `yarn.lock` (classic and berry) and
-  `pnpm-lock.yaml` into the same `InstalledPackages` shape that
-  `src/lockfile/parse.ts` produces from `package-lock.json`, so the rest of the
-  pipeline works unchanged. Test-runner detection already knows all three
-  managers. *Done when:* fixtures for each format diff correctly, direct vs
-  transitive flag included.
+- **pnpm lockfile support (#3).** Parse `pnpm-lock.yaml` into the same
+  `InstalledPackages` shape (yarn is done; see `src/lockfile/yarn.ts`) and fill in
+  the pnpm entry of `MANAGERS` in `src/testrun/managers.ts`. *Done when:* fixtures
+  diff correctly, direct vs transitive flag included.
 - **Monorepo / workspaces.** Understand `workspaces`, run per-package test
   scripts, and attribute a bump to the workspace that declares it.
 

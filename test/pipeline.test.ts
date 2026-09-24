@@ -145,3 +145,12 @@ test("baseline run installs the old lockfile with the old package.json", async (
   await runPipeline({ ...input({ a: "1.0.0" }, { a: "1.5.0" }), oldPackageJson: '{"old":true}' }, deps);
   assert.deepEqual(seen, [undefined, '{"old":true}']); // new state uses the working tree, baseline the old manifest
 });
+
+test("probe cannot isolate (manager has no single-dependency move): never cleared, never falsely safe", async () => {
+  const { deps } = world();
+  deps.testLockfile = async (text) => (text.includes('"1.5.0"') && text.includes('"1.1.0"') ? failed("red") : passed);
+  deps.testDependencyAt = async () => ({ status: "install-failed", result: { ...result("not tested on its own"), exitCode: 1 } });
+  const report = await runPipeline(input({ a: "1.0.0", b: "1.0.0" }, { a: "1.5.0", b: "1.1.0" }), deps);
+  assert.ok(report.verdicts.every((v) => v.status === "broken"));
+  assert.equal(report.overall, "broken");
+});

@@ -45,7 +45,7 @@ Notes for container mode:
 - Two runs per test: `npm ci` (network, so any registry from `.npmrc` works)
   in one container, then `npm test` in a fresh container on the same sandbox
   directory with `--network none`. Files installed persist between the two.
-  Bisection and single-dependency probes (`--package-lock-only`) need the
+  Bisection and single-dependency probes (`--package-lock-only`, `yarn add`) need the
   network and keep it. Install scripts are not run offline: many legitimately
   download binaries (esbuild, sharp), so `--ignore-scripts` plus an offline
   `npm rebuild` would break real projects; an allowlisting proxy is future work.

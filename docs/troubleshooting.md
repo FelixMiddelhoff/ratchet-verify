@@ -15,12 +15,12 @@ The ref doesn't exist in this checkout. In CI, fetch it: `actions/checkout`
 with `fetch-depth: 0`, or `git fetch origin main` and use `--base origin/main`.
 The same message appears when the lockfile does not exist at that ref.
 
-**`no lockfile at …/package-lock.json: run `npm install` to create one`**
-ratchet reads the project's `package-lock.json`. Create it, or point at
+**`no lockfile at …/package-lock.json: run `npm install` (or `yarn install`) to create one`**
+ratchet reads the project's `package-lock.json` or `yarn.lock`. Create it, or point at
 another file with `--new <file>`.
 
-**`no lockfile at …: found yarn.lock, but only npm's package-lock.json is supported so far`**
-Yarn and pnpm lockfiles aren't diffed yet
+**`found pnpm-lock.yaml, but pnpm lockfiles are not supported yet`**
+npm and yarn (classic and berry) lockfiles work; pnpm isn't diffed yet
 ([help wanted](../README.md#help-wanted)). If you also keep a
 `package-lock.json` generated from the same `package.json`, ratchet can use it.
 
