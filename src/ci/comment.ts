@@ -60,6 +60,10 @@ function groupDetails(members: DependencyVerdict[]): string[] {
 function details(v: DependencyVerdict): string[] {
   const out = [`<details><summary><b>${escapeHtml(v.name)}</b>: ${escapeHtml(v.summary)}</summary>`, ""];
   for (const e of v.evidence) out.push(...evidence(e));
+  if (v.suggestion) {
+    const s = v.suggestion;
+    out.push(`- **last known good:** \`${s.version}\` (tested passing in this run)${s.command ? `; pin with \`${s.command}\`` : ""}. Later versions were not tested and are not claimed broken.`);
+  }
   for (const c of v.caveats) out.push(`- **caveat:** ${escapeHtml(c)}`);
   for (const n of v.notes) out.push(`- note: ${escapeHtml(n)}`);
   out.push("", "</details>");

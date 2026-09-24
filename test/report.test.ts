@@ -228,3 +228,42 @@ test("a long group of transitive names is shortened in text output", () => {
   const text = renderText({ schemaVersion: 1, overall: "risky", verdicts: names.map(shared) });
   assert.match(text, /20 transitive dependencies \(t0, t1, t2, t3, t4, t5 and 14 more\)/);
 });
+
+const bis = (o: Partial<import("../src/bisect/index.js").BisectResult>) =>
+  ({ status: "exact", confirmation: "confirmed", lastGood: "1.2.0", firstBad: "1.3.0", ambiguousWith: [], log: [], installs: 3, ...o }) as import("../src/bisect/index.js").BisectResult;
+
+test("last-good suggestion: exact direct bisection gets version and npm pin command in every renderer", async () => {
+  const { renderMarkdown } = await import("../src/ci/comment.js");
+  const report = buildReport([assessment({ test: failed(), bisect: bis({}) })]);
+  const v = report.verdicts[0]!;
+  assert.deepEqual(v.suggestion, { version: "1.2.0", command: "npm install lib@1.2.0" });
+  assert.equal(JSON.parse(renderJson(report)).verdicts[0].suggestion.command, "npm install lib@1.2.0");
+  assert.equal(report.schemaVersion, 1);
+  const text = renderText(report);
+  assert.match(text, /last known good: 1\.2\.0 \(tested passing in this run\); pin with: npm install lib@1\.2\.0/);
+  assert.match(text, /not claimed broken/);
+  assert.match(renderMarkdown(report), /last known good:\*\* `1\.2\.0`.*`npm install lib@1\.2\.0`/);
+  assert.match(renderSarif(report), /last known good: 1\.2\.0/);
+});
+
+test("last-good suggestion: transitive dependency gets the version but no pin command", () => {
+  const a = assessment({ test: failed(), bisect: bis({}) });
+  a.change = { ...a.change, direct: false };
+  assert.deepEqual(judge(a).suggestion, { version: "1.2.0" });
+});
+
+test("last-good suggestion: absent when narrowed, flaky, unconfirmed, not bisected", async () => {
+  const { renderMarkdown } = await import("../src/ci/comment.js");
+  const cases = [
+    bis({ status: "narrowed" }),
+    bis({ status: "unstable", confirmation: "flaky" }),
+    bis({ confirmation: "unconfirmed" }),
+    undefined,
+  ];
+  for (const b of cases) {
+    const report = buildReport([assessment({ test: failed(), ...(b ? { bisect: b } : {}) })]);
+    assert.equal(report.verdicts[0]!.suggestion, undefined);
+    assert.ok(!("suggestion" in JSON.parse(renderJson(report)).verdicts[0]));
+    for (const out of [renderText(report), renderMarkdown(report), renderSarif(report)]) assert.doesNotMatch(out, /last known good/);
+  }
+});

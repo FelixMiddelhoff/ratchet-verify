@@ -43,6 +43,12 @@ export interface DependencyVerdict {
   /** One line a human can read without opening the evidence. */
   summary: string;
   evidence: Evidence[];
+  /**
+   * Only on a broken verdict whose bisection is exact and confirmed: the last version ratchet itself
+   * tested passing in this run. `command` is set for direct dependencies only. Later versions are
+   * not claimed broken, only untested.
+   */
+  suggestion?: { version: string; command?: string };
   /** Gaps that reduced confidence; a "safe" with caveats is a tests-only verdict, not an all-clear. */
   caveats: string[];
   /** Informational, does not affect confidence. */
