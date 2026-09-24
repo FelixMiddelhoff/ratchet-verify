@@ -5,6 +5,11 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+### Added
+- Workspaces (#4): package.json `workspaces` (npm, yarn classic/berry) and `pnpm-workspace.yaml` are discovered (`src/workspaces/`). A dependency is direct if any workspace (or root) manifest names it; an npm copy under `<workspace>/node_modules` is direct when that workspace names it; pnpm reads every `importers` entry (was root only). Verdicts carry `workspaces: { declared, used }` (JSON optional field, text line, Markdown name cell). The usage scan already covered all packages. Test command unchanged and documented: root `scripts.test` only, none = "risky (unverified)". Single-dependency probes edit the declaring workspace (`npm -w`, `yarn workspace`, `pnpm --filter`, root: `yarn -W` / `pnpm -w`); several declarers = not tested on its own. The baseline/probe sandboxes get the old workspace manifests (`--base` via git; `--old-workspace-package-json <dir>=<file>`); a workspace absent at the base ref is removed from the old state.
+- Usage scanner (#35): tsconfig/jsconfig `paths` and `baseUrl` (all configs above a file, `extends` chains incl. node_modules packages, JSONC via the TypeScript API, cycles guarded) and workspace package names/subpaths (`exports`, `module`/`main`, `dist`->`src`, `src/index`) resolve to project files, so re-exports through them are followed. Unlocatable targets (matching alias without a file, unreadable/missing `extends`, unparseable tsconfig, workspace entry not found, `#imports`) go to `UsageScan.unresolved` and downgrade safe to safe (partial).
+- Corpus: chalk 4.1.2 -> 5.3.0 in a workspace package via npm, yarn classic and pnpm; lodash 4.17.20 -> 4.17.21 in a workspace package.
+
 ## [0.4.0] - 2026-09-24
 
 ### Documentation
@@ -30,7 +35,7 @@ All notable changes to this project are documented here, in
 ## [0.3.0] - 2026-09-24
 
 ### Added
-- Usage scanner (#6): re-exports through the project's own modules (`export {x} from`, `export *`, chains, `index` files) are followed, so uses in importing files count as package use. Local shadowing (parameters, `let`/`const`/`var`, functions, classes, catch and loop variables) is ignored; unsure cases still count. CommonJS forwarding (`module.exports = require('pkg')` and variants) is followed. Forms it cannot follow (`wrap(pkg)`, computed require paths, unstable re-export chains) are reported in `UsageScan.unresolved` and downgrade safe to safe (partial). Not handled: tsconfig path aliases and workspace specifiers.
+- Usage scanner (#6): re-exports through the project's own modules (`export {x} from`, `export *`, chains, `index` files) are followed, so uses in importing files count as package use. Local shadowing (parameters, `let`/`const`/`var`, functions, classes, catch and loop variables) is ignored; unsure cases still count. CommonJS forwarding (`module.exports = require('pkg')` and variants) is followed. Forms it cannot follow (`wrap(pkg)`, computed require paths, unstable re-export chains) are reported in `UsageScan.unresolved` and downgrade safe to safe (partial). Not handled here: tsconfig path aliases and workspace specifiers (see #35 in Unreleased).
 - Corpus: five more cases with independently verified outcomes (debug, is-number, yargs, uuid main-entry and the deep-require uuid case that is broken).
 - Container mode restricts egress for the test phase (#23): the project's tests run in a separate container with `--network none`, so a test (or anything it loads) cannot send data out. The install phase keeps the network. Opt out with `--network open` / `"containerNetwork": "open"` (Action input `network`) for suites that need the network.
 - Bisector flaky detection (#8): the reported first-bad and last-good versions are re-run once each. A flipped result gives status `unstable` (verdict stays broken, reads "flaky suite: result not reliable", no exact culprit); inconclusive or unaffordable re-runs are marked unconfirmed. The 2 re-runs are reserved from `maxInstalls`, so total installs never exceed it. `BisectResult.confirmation`, `bisect(..., { confirm })`.
