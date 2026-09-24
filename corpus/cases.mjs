@@ -154,4 +154,100 @@ export const cases = [
     expect: { overall: "safe", dependency: "rc-corpus-stealth", status: "safe", confidence: "reduced" },
     check: ({ exfil }) => (exfil && JSON.stringify(exfil).includes("hunter2-corpus-secret") ? "credential visible to the test run" : undefined),
   },
+
+  // Truth for the four cases below was established independently of ratchet (2026-09-24): install old and
+  // new by hand in scratch dirs, run the same test.js on each, and read the upstream changelog.
+  {
+    // TRUTH: safe. Manual run: test passes on 4.1.1 and 4.3.4. Semver minor; debug's 4.x releases are fixes
+    // (no breaking entries). ratchet: safe/reduced "no changelog was found" (tests-only) - agrees, with a gap
+    // noted per policy rule 1.
+    name: "debug 4.1.1 -> 4.3.4 (minor release with fixes, safe)",
+    source: "real",
+    bump: { name: "debug", old: "4.1.1", new: "4.3.4" },
+    files: {
+      "test.js": testScript(`
+        const debug = require("debug");
+        const log = debug("test");
+        if (typeof log !== "function") throw new Error("debug() broke");
+      `),
+    },
+    expect: { overall: "safe", dependency: "debug", status: "safe", confidence: "reduced" },
+  },
+
+  {
+    // TRUTH: safe. The original case was circular/wrong: its test asserted isNumber("42") === false, but
+    // is-number returns true for numeric strings in BOTH 6.0.0 and 7.0.0, so the test failed on the OLD
+    // version and ratchet said "risky: baseline failing" (an artifact of the bad test, not of the bump).
+    // Fixed test passes on both. Differential run of 21 inputs (numbers, NaN, Infinity, numeric/blank/hex
+    // strings, bool, null, arrays, objects, boxed Number) found zero behavior differences between 6.0.0
+    // and 7.0.0. The package ships no changelog or GitHub releases. Expected: safe with reduced confidence
+    // (major bump, no changelog: "safe (partial)" per policy rule 1).
+    name: "is-number 6.0.0 -> 7.0.0 (major bump, no behavior change for used API)",
+    source: "real",
+    bump: { name: "is-number", old: "6.0.0", new: "7.0.0" },
+    files: {
+      "test.js": testScript(`
+        const isNumber = require("is-number");
+        if (isNumber(42) !== true) throw new Error("is-number(42) broke");
+        if (isNumber("42") !== true) throw new Error("is-number('42') broke");
+        if (isNumber("abc") !== false) throw new Error("is-number('abc') broke");
+      `),
+    },
+    expect: { overall: "safe", dependency: "is-number", status: "safe", confidence: "reduced" },
+  },
+
+  {
+    // TRUTH: safe for this usage. Manual run: test passes on 15.4.1 and 16.0.0. Upstream 16.0.0 changelog
+    // breaking entries: ESM/Deno API tweaks (default export, hideBin), find-up->escalade + export map
+    // (limits deep imports on Node >= 12), yargs-parser 19, single-char aliases first in help, rebase helper
+    // removed from instance, Node 8 dropped. None touches yargs("yargs/yargs") + .option + .argv.
+    // ratchet: safe/reduced "major version bump" - agrees and matches policy (major => safe (partial)).
+    name: "yargs 15.4.1 -> 16.0.0 (major version, test passes with new API)",
+    source: "real",
+    bump: { name: "yargs", old: "15.4.1", new: "16.0.0" },
+    files: {
+      "test.js": testScript(`
+        const yargs = require("yargs/yargs");
+        const result = yargs(["--foo", "bar"]).option("foo", { type: "string" }).argv;
+        if (result.foo !== "bar") throw new Error("yargs parsing broke");
+      `),
+    },
+    expect: { overall: "safe", dependency: "yargs", status: "safe", confidence: "reduced" },
+  },
+
+  {
+    // TRUTH: safe for this usage. Manual run: require("uuid").v4() passes on 7.0.3 and 8.0.0. Upstream 8.0.0
+    // breaking entries: (1) ESM default export removed, (2) deep requires like require("uuid/v4") removed.
+    // This test uses neither (CJS main entry, named v4), so it is unaffected.
+    // FINDING: ratchet says risky/full (high-confidence call-site hit on symbol "v4" from the deep-require
+    // bullet, which only mentions the string "uuid/v4"). That is a false POSITIVE - allowed by policy rule 4,
+    // so it is pinned here as "risky" deliberately, not as truth. The true-broken variant is the next case.
+    name: "uuid 7.0.3 -> 8.0.0 (main-entry v4; ratchet over-flags, truth safe)",
+    source: "real",
+    bump: { name: "uuid", old: "7.0.3", new: "8.0.0" },
+    files: {
+      "test.js": testScript(`
+        const uuid = require("uuid");
+        const v4 = uuid.v4();
+        if (!v4 || typeof v4 !== "string") throw new Error("uuid.v4() broke");
+      `),
+    },
+    expect: { overall: "risky", dependency: "uuid", status: "risky" },
+  },
+
+  {
+    // TRUTH: broken by 8.0.0 (still-published packages). Manual run: require("uuid/v4")() returns a UUID on
+    // 7.0.3 and throws ERR_PACKAGE_PATH_NOT_EXPORTED on 8.0.0. Upstream 8.0.0 changelog, BREAKING: "Deep
+    // requiring specific algorithms ... like require('uuid/v4') ... is no longer supported."
+    name: "uuid 7.0.3 -> 8.0.0 (deep require uuid/v4 removed, known broken)",
+    source: "real",
+    bump: { name: "uuid", old: "7.0.3", new: "8.0.0" },
+    files: {
+      "test.js": testScript(`
+        const v4 = require("uuid/v4");
+        if (typeof v4() !== "string") throw new Error("uuid/v4 broke");
+      `),
+    },
+    expect: { overall: "broken", dependency: "uuid", status: "broken", summary: /broken by 8\.0\.0/ },
+  },
 ];
