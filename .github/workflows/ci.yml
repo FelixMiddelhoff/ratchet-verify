@@ -16,6 +16,8 @@ jobs:
   test:
     name: test
     needs: test-matrix
+    # A skipped required check counts as passing, so run always and fail explicitly.
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
-      - run: true
+      - run: test "${{ needs.test-matrix.result }}" = "success"
