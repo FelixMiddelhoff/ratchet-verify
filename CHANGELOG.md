@@ -5,6 +5,9 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+### Documentation
+- CI recipes for GitLab CI, Azure DevOps, CircleCI and Jenkins in `docs/ci.md`. These recipes are adapted from the GitHub Action and require platform-specific verification.
+
 ## [0.3.0] - 2026-09-24
 
 ### Added

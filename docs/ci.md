@@ -82,6 +82,206 @@ npx ratchet-verify . --base origin/main --markdown --report-dir ratchet-report
 - Make the base ref available (`git fetch`, or a full clone) and run on the
   *branch with the bump*, so the working tree's lockfile is the "after" state.
 
+### GitLab CI
+
+> **Untested on GitLab CI.** This recipe is adapted from the GitHub Action behaviour. Corrections welcome.
+
+```yaml
+ratchet:
+  image: node:24
+  only:
+    - merge_requests
+    changes:
+      - package.json
+      - package-lock.json
+  script:
+    - git fetch origin $CI_MERGE_REQUEST_TARGET_BRANCH_NAME
+    - npx ratchet-verify . --base origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME --fail-on broken --markdown --report-dir ratchet-report
+  artifacts:
+    paths:
+      - ratchet-report/
+    reports:
+      sast: ratchet-report/report.sarif
+    when: always
+  after_script:
+    - |
+      EXIT_CODE=$?
+      if [ $EXIT_CODE -ne 0 ]; then
+        echo "ratchet check failed with exit code $EXIT_CODE"
+        exit $EXIT_CODE
+      fi
+```
+
+For merge requests from forks, you may need to set `CI_MERGE_REQUEST_TARGET_BRANCH_NAME`
+explicitly. Adjust `fail-on` to `risky` if needed. The SARIF report is optional
+and requires SAST feature to be enabled in your project. The `ratchet-report/report.md`
+can be posted as a comment via the GitLab API if your CI has the appropriate token.
+
+For `isolation: container` (recommended), the runner must have docker or podman available.
+
+### Azure DevOps
+
+> **Untested on Azure DevOps.** This recipe is adapted from the GitHub Action behaviour. Corrections welcome.
+
+```yaml
+trigger:
+  branches:
+    include: [main]
+    exclude: [refs/tags/*]
+  paths:
+    include:
+      - package.json
+      - package-lock.json
+
+pr:
+  branches:
+    include: [main]
+  paths:
+    include:
+      - package.json
+      - package-lock.json
+
+jobs:
+  - job: Ratchet
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+      - task: NodeTool@0
+        inputs:
+          versionSpec: 24
+      - script: |
+          git fetch origin $(System.PullRequest.TargetBranch)
+          npx ratchet-verify . --base origin/$(System.PullRequest.TargetBranch) --fail-on broken --markdown --report-dir ratchet-report
+        displayName: Run ratchet
+        continueOnError: true
+      - task: PublishBuildArtifacts@1
+        condition: always()
+        inputs:
+          pathToPublish: ratchet-report
+          artifactName: ratchet-report
+      - task: PublishSecurityAnalysisLogs@1
+        condition: always()
+        inputs:
+          ArtifactName: CodeAnalysisLogs
+          ArtifactType: Container
+          AllTools: false
+          SarifToolFilter: sarif
+```
+
+The `continueOnError: true` allows the job to complete even if ratchet exits with code 1
+(verdict failure), but the `ratchet-report` artifact is still published. Adjust the `vmImage`
+if your organization prefers a different base image. For `isolation: container`, ensure
+docker is available on the image. The SARIF report can be published via `PublishSecurityAnalysisLogs`
+if configured in your Azure DevOps instance.
+
+### CircleCI
+
+> **Untested on CircleCI.** This recipe is adapted from the GitHub Action behaviour. Corrections welcome.
+
+```yaml
+version: 2.1
+
+workflows:
+  test:
+    jobs:
+      - ratchet:
+          filters:
+            branches:
+              ignore: main
+
+jobs:
+  ratchet:
+    docker:
+      - image: node:24
+    steps:
+      - checkout
+      - run:
+          name: Fetch base ref
+          command: |
+            git fetch origin main
+      - run:
+          name: Run ratchet
+          command: |
+            npx ratchet-verify . --base origin/main --fail-on broken --markdown --report-dir ratchet-report
+          no_output_timeout: 20m
+      - store_artifacts:
+          path: ratchet-report
+          destination: ratchet-report
+      - run:
+          name: Check ratchet exit code
+          command: |
+            if [ $? -ne 0 ]; then
+              exit 1
+            fi
+          when: always
+```
+
+The `no_output_timeout` prevents CircleCI from killing long test runs. The `store_artifacts`
+step uploads the entire report directory (including JSON, Markdown, and SARIF) for download
+and inspection. Adjust the `image` if your project requires a different Node version or base
+image. The exit code from ratchet is checked to fail the job appropriately.
+
+### Jenkins
+
+> **Untested on Jenkins.** This recipe is adapted from the GitHub Action behaviour. Corrections welcome.
+
+```groovy
+pipeline {
+    agent {
+        docker {
+            image 'node:24'
+            args '-v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
+    triggers {
+        githubPullRequest(
+            branches: [[compareBranch: 'main']],
+            filesToCheck: 'package.json,package-lock.json'
+        )
+    }
+    stages {
+        stage('Fetch base') {
+            steps {
+                sh 'git fetch origin main'
+            }
+        }
+        stage('Run ratchet') {
+            steps {
+                sh '''
+                    npx ratchet-verify . --base origin/main --fail-on broken --markdown --report-dir ratchet-report
+                    RATCHET_EXIT=$?
+                    echo "Ratchet exit code: $RATCHET_EXIT"
+                    if [ $RATCHET_EXIT -eq 1 ]; then
+                        echo "Ratchet verdict is at or above fail-on level"
+                    fi
+                    exit $RATCHET_EXIT
+                '''
+            }
+        }
+    }
+    post {
+        always {
+            archiveArtifacts artifacts: 'ratchet-report/**', allowEmptyArchive: true
+            publishHTML([
+                reportDir: 'ratchet-report',
+                reportFiles: 'report.md',
+                reportName: 'Ratchet Report'
+            ])
+        }
+        unstable {
+            step([$class: 'GitHubCommitStatusSetter', contextSource: [$class: 'ManuallyEnteredCommitContextSource', context: 'ratchet/report']])
+        }
+    }
+}
+```
+
+The Jenkins pipeline uses a Docker agent with Node 24. The `githubPullRequest` trigger only runs
+on pull requests that modify `package.json` or `package-lock.json`. The exit code from ratchet
+is captured and used to fail or mark the stage unstable. Artifacts are archived and a report
+can be published as HTML if desired. For `isolation: container`, the `/var/run/docker.sock`
+mount allows docker-in-docker if needed. Adjust the base branch name (currently `main`) to
+match your repository's default branch.
+
 ## Choosing `fail-on`
 
 | Setting | Effect | Good for |
