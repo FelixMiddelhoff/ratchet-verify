@@ -5,6 +5,8 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-24
+
 ### Added
 - Workspaces (#4): package.json `workspaces` (npm, yarn classic/berry) and `pnpm-workspace.yaml` are discovered (`src/workspaces/`). A dependency is direct if any workspace (or root) manifest names it; an npm copy under `<workspace>/node_modules` is direct when that workspace names it; pnpm reads every `importers` entry (was root only). Verdicts carry `workspaces: { declared, used }` (JSON optional field, text line, Markdown name cell). The usage scan already covered all packages. Test command unchanged and documented: root `scripts.test` only, none = "risky (unverified)". Single-dependency probes edit the declaring workspace (`npm -w`, `yarn workspace`, `pnpm --filter`, root: `yarn -W` / `pnpm -w`); several declarers = not tested on its own. The baseline/probe sandboxes get the old workspace manifests (`--base` via git; `--old-workspace-package-json <dir>=<file>`); a workspace absent at the base ref is removed from the old state.
 - Usage scanner (#35): tsconfig/jsconfig `paths` and `baseUrl` (all configs above a file, `extends` chains incl. node_modules packages, JSONC via the TypeScript API, cycles guarded) and workspace package names/subpaths (`exports`, `module`/`main`, `dist`->`src`, `src/index`) resolve to project files, so re-exports through them are followed. Unlocatable targets (matching alias without a file, unreadable/missing `extends`, unparseable tsconfig, workspace entry not found, `#imports`) go to `UsageScan.unresolved` and downgrade safe to safe (partial).
@@ -90,6 +92,7 @@ All notable changes to this project are documented here, in
 - A missing `package-lock.json` now says what ratchet supports (and mentions a
   found `yarn.lock` / `pnpm-lock.yaml`) instead of a bare `ENOENT`.
 
+[0.5.0]: https://github.com/FelixMiddelhoff/ratchet-verify/releases/tag/v0.5.0
 [0.4.0]: https://github.com/FelixMiddelhoff/ratchet-verify/releases/tag/v0.4.0
 [0.3.0]: https://github.com/FelixMiddelhoff/ratchet-verify/releases/tag/v0.3.0
 [0.2.0]: https://github.com/FelixMiddelhoff/ratchet-verify/releases/tag/v0.2.0
