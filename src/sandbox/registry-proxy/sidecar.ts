@@ -1,5 +1,5 @@
 import { configSecrets, parseConfig, type ProxyConfig } from "./config.js";
-import { createRedactor, redactError } from "./secret.js";
+import { createRedactor, redactError, type Redactor } from "./secret.js";
 import { startRegistryProxy, type RegistryProxy } from "./server.js";
 
 export const READY_PREFIX = "RATCHET_PROXY_READY";
@@ -41,6 +41,8 @@ export interface SidecarIo {
   stdin: AsyncIterable<Buffer | string>;
   stdout: (line: string) => void;
   stderr: (line: string) => void;
+  /** Called once the secrets are known so crash reporting can redact them. */
+  setRedactor?: (redact: Redactor) => void;
 }
 
 export type SidecarResult = { ok: true; proxy: RegistryProxy } | { ok: false; exitCode: number };
@@ -88,6 +90,7 @@ export async function runSidecar(io: SidecarIo): Promise<SidecarResult> {
     return { ok: false, exitCode: 2 };
   }
   const redact = createRedactor(configSecrets(config));
+  io.setRedactor?.(redact);
   try {
     const proxy = await startRegistryProxy(config, { auditSink: (line) => io.stderr(line) });
     io.stdout(`${READY_PREFIX} port=${proxy.port}`);

@@ -9,6 +9,10 @@ export interface Accepted {
   class: AcceptedClass;
   registry: RegistryConfig;
   name: string;
+  /** Tarball only. */
+  version?: string;
+  /** True when the name was let through by discovery mode (not in the configured allowlist). */
+  discovered?: boolean;
   /** Canonical upstream path (prefix included), rebuilt from parsed parts, never the raw client path. */
   upstreamPath: string;
 }
@@ -19,6 +23,10 @@ export interface Rejected {
   status: number;
   /** Fixed vocabulary, safe to log and to return to the client. */
   reason: string;
+  /** Known once routing succeeded; never raw client text. */
+  registry?: string;
+  /** Only ever a string that passed the package-name grammar. */
+  name?: string;
 }
 
 export interface ClassifyInput {
@@ -31,7 +39,8 @@ export interface ClassifyInput {
 export interface ClassifyContext {
   registries: readonly RegistryConfig[];
   limits: Pick<Limits, "maxUrlLength" | "maxHeaderBytes">;
-  isPackageAllowed(name: string): boolean;
+  /** false = deny; "discovered" = allowed by discovery mode only. */
+  isPackageAllowed(name: string): boolean | "discovered";
 }
 
 const TOKEN_RE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
@@ -69,43 +78,20 @@ export function checkHeaderBlock(rawHeaders: readonly string[], maxHeaderBytes: 
   return undefined;
 }
 
-/**
- * Normalises then classifies an incoming request. Anything that is not exactly a
- * packument or tarball GET/HEAD for an allowed package is rejected.
- */
-export function classifyRequest(input: ClassifyInput, ctx: ClassifyContext): Accepted | Rejected {
-  const method = input.method;
-  if (method !== "GET" && method !== "HEAD") return reject(405, "method-not-allowed", "denied");
+interface ParsedPackagePath {
+  ok: true;
+  name: string;
+  cls: AcceptedClass;
+  /** Tarball only. */
+  file?: string;
+  version?: string;
+}
 
-  const url = input.url;
-  if (typeof url !== "string" || url.length === 0) return reject(400, "missing-url");
-  if (url.length > ctx.limits.maxUrlLength) return reject(414, "url-too-long");
-  // Printable ASCII only: kills CR/LF/NUL/space/raw unicode/backslash before any parsing.
-  if (!/^[!-~]+$/.test(url) || url.includes("\\")) return reject(400, "bad-characters");
-  if (url[0] !== "/" || url[1] === "/") return reject(400, "not-origin-form");
-  if (url.includes("#")) return reject(400, "fragment-not-allowed");
-  if (url.includes("?")) return reject(403, "query-not-allowed", "denied");
-
-  const headerProblem = checkHeaderBlock(input.rawHeaders, ctx.limits.maxHeaderBytes);
-  if (headerProblem) return reject(400, headerProblem);
-
-  const rawSegments = url.slice(1).split("/");
-  if (rawSegments.some((s) => s.length === 0)) return reject(400, "empty-segment");
-
-  // Registry routing: a non-default registry owns "/<id>/..."; everything else goes to the default.
-  let registry = ctx.registries.find((r) => r.isDefault);
-  let segs = rawSegments;
-  const routed = ctx.registries.find((r) => !r.isDefault && r.id === rawSegments[0]);
-  if (routed) {
-    registry = routed;
-    segs = rawSegments.slice(1);
-  }
-  if (!registry) return reject(404, "no-registry", "denied");
-  if (segs.length === 0) return reject(403, "path-not-allowed", "denied");
-
-  // Decode each segment exactly once; %2f is only legal as the scope separator of a scoped name.
+/** Decodes each segment exactly once and turns `[name..., "-", file]` / `[name]` into a package request, or rejects. */
+function parsePackagePath(segs: readonly string[]): ParsedPackagePath | Rejected {
   const decoded: string[] = [];
   for (const [i, raw] of segs.entries()) {
+    // %2f is only legal as the scope separator of a scoped name; everything else is decoded once.
     if (/%(?![0-9A-Fa-f]{2})/.test(raw)) return reject(400, "bad-percent-encoding");
     let d: string;
     try {
@@ -142,23 +128,100 @@ export function classifyRequest(input: ClassifyInput, ctx: ClassifyContext): Acc
   }
   if (!isValidPackageName(name)) return reject(403, "invalid-package-name", "denied");
 
-  let cls: AcceptedClass;
-  let upstreamPath: string;
-  if (rest.length === 0) {
-    cls = "packument";
-    upstreamPath = `/${name.replace("/", "%2F")}`;
-  } else if (rest.length === 2 && rest[0] === "-") {
+  if (rest.length === 0) return { ok: true, name, cls: "packument" };
+  if (rest.length === 2 && rest[0] === "-") {
     const file = rest[1] as string;
     const bare = name.includes("/") ? (name.split("/")[1] as string) : name;
     const version = file.startsWith(`${bare}-`) && file.endsWith(".tgz") ? file.slice(bare.length + 1, -4) : "";
-    if (!VERSION_RE.test(version)) return reject(403, "path-not-allowed", "denied");
-    cls = "tarball";
-    upstreamPath = `/${name}/-/${file}`;
-  } else {
-    return reject(403, "path-not-allowed", "denied");
+    if (!VERSION_RE.test(version)) return { ...reject(403, "path-not-allowed", "denied"), name };
+    return { ok: true, name, cls: "tarball", file, version };
   }
-
-  if (!ctx.isPackageAllowed(name)) return reject(403, "package-not-allowed", "denied");
-
-  return { ok: true, method, class: cls, registry, name, upstreamPath: `${registry.pathPrefix}${upstreamPath}` };
+  return { ...reject(403, "path-not-allowed", "denied"), name };
 }
+
+/** Canonical client-facing path prefix of a registry: "" for the default one, `/_r/<id>` otherwise. */
+export const routePrefix = (r: RegistryConfig): string => (r.isDefault ? "" : `/_r/${r.id}`);
+
+/**
+ * Same-origin redirect / learned-URL check: is this upstream path (registry pathPrefix
+ * included, no query) exactly a packument or tarball of an allowed package?
+ */
+export function isAllowedUpstreamPackagePath(registry: RegistryConfig, pathname: string, search: string, isAllowed: (name: string) => boolean): boolean {
+  if (search !== "") return false;
+  const prefix = registry.pathPrefix;
+  if (prefix !== "" && !pathname.startsWith(`${prefix}/`)) return false;
+  const rest = pathname.slice(prefix.length);
+  if (!rest.startsWith("/") || rest.length < 2) return false;
+  const segs = rest.slice(1).split("/");
+  if (segs.some((s) => s.length === 0)) return false;
+  const p = parsePackagePath(segs);
+  return p.ok && isAllowed(p.name);
+}
+
+/**
+ * Normalises then classifies an incoming request. Anything that is not exactly a
+ * packument or tarball GET/HEAD for an allowed package is rejected.
+ *
+ * Routing: the default registry owns every unprefixed path; any registry (default or not) is
+ * also reachable as `/_r/<id>/...`. `_` cannot start a package name, so no id can shadow a package.
+ * A leading registry pathPrefix (`/api/npm/repo/...`, from a lockfile `resolved` URL whose host was
+ * replaced) is stripped when what remains is a valid package path.
+ */
+export function classifyRequest(input: ClassifyInput, ctx: ClassifyContext): Accepted | Rejected {
+  const method = input.method;
+  if (method !== "GET" && method !== "HEAD") return reject(405, "method-not-allowed", "denied");
+
+  const url = input.url;
+  if (typeof url !== "string" || url.length === 0) return reject(400, "missing-url");
+  if (url.length > ctx.limits.maxUrlLength) return reject(414, "url-too-long");
+  // Printable ASCII only: kills CR/LF/NUL/space/raw unicode/backslash before any parsing.
+  if (!/^[!-~]+$/.test(url) || url.includes("\\")) return reject(400, "bad-characters");
+  if (url[0] !== "/" || url[1] === "/") return reject(400, "not-origin-form");
+  if (url.includes("#")) return reject(400, "fragment-not-allowed");
+  if (url.includes("?")) return reject(403, "query-not-allowed", "denied");
+
+  const headerProblem = checkHeaderBlock(input.rawHeaders, ctx.limits.maxHeaderBytes);
+  if (headerProblem) return reject(400, headerProblem);
+
+  const rawSegments = url.slice(1).split("/");
+  if (rawSegments.some((s) => s.length === 0)) return reject(400, "empty-segment");
+
+  let registry = ctx.registries.find((r) => r.isDefault);
+  let segs = rawSegments;
+  if (rawSegments[0] === "_r") {
+    const id = rawSegments[1];
+    registry = ctx.registries.find((r) => r.id === id);
+    if (!registry) return reject(404, "no-registry", "denied");
+    segs = rawSegments.slice(2);
+  }
+  if (!registry) return reject(404, "no-registry", "denied");
+  const withRegistry = <T extends Rejected>(r: T): T => ({ ...r, registry: registry.id });
+  if (segs.length === 0) return withRegistry(reject(403, "path-not-allowed", "denied"));
+
+  let parsed: ParsedPackagePath | Rejected | undefined;
+  if (registry.pathPrefix !== "") {
+    const prefixSegs = registry.pathPrefix.slice(1).split("/");
+    if (segs.length > prefixSegs.length && prefixSegs.every((p, i) => segs[i] === p)) {
+      const stripped = parsePackagePath(segs.slice(prefixSegs.length));
+      if (stripped.ok) parsed = stripped;
+    }
+  }
+  parsed ??= parsePackagePath(segs);
+  if (!parsed.ok) return withRegistry(parsed);
+
+  const verdict = ctx.isPackageAllowed(parsed.name);
+  if (verdict === false) return { ...withRegistry(reject(403, "package-not-allowlisted", "denied")), name: parsed.name };
+
+  const upstreamPath = parsed.cls === "packument" ? `/${parsed.name.replace("/", "%2F")}` : `/${parsed.name}/-/${parsed.file as string}`;
+  return {
+    ok: true,
+    method,
+    class: parsed.cls,
+    registry,
+    name: parsed.name,
+    ...(parsed.version !== undefined ? { version: parsed.version } : {}),
+    ...(verdict === "discovered" ? { discovered: true } : {}),
+    upstreamPath: `${registry.pathPrefix}${upstreamPath}`,
+  };
+}
+

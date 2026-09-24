@@ -222,7 +222,7 @@ describe("request classification: accepted shapes", () => {
     assert.ok(v.ok && v.method === "HEAD");
   });
   test("non-default registry is routed by id prefix, default takes the rest", () => {
-    const v = c("/other/left-pad");
+    const v = c("/_r/other/left-pad");
     assert.ok(v.ok);
     assert.equal(v.registry.id, "other");
     assert.equal(v.upstreamPath, "/left-pad");
@@ -338,25 +338,25 @@ describe("request classification: rejected (path/URL normalisation fuzz table)",
     ["/@scope/pkg/-/@scope/pkg-2.0.0.tgz", "path-not-allowed", 403],
     ["/@/pkg", "invalid-package-name", 403],
     // names
-    ["/left-pad.", "package-not-allowed", 403],
+    ["/left-pad.", "package-not-allowlisted", 403],
     ["/.hidden", "invalid-package-name", 403],
     ["/_private", "invalid-package-name", 403],
-    ["/node_modules", "package-not-allowed", 403],
+    ["/node_modules", "package-not-allowlisted", 403],
     ["/@@scope/pkg", "invalid-package-name", 403],
     ["/left-pad@1.0.0", "invalid-package-name", 403],
     ["/left,pad", "invalid-package-name", 403],
     ["/left:pad", "invalid-package-name", 403],
     // allowlist (case sensitive, exact, no prefixes unless configured)
-    ["/LEFT-PAD", "package-not-allowed", 403],
-    ["/Left-Pad", "package-not-allowed", 403],
-    ["/mixed", "package-not-allowed", 403],
-    ["/@Scope/pkg", "package-not-allowed", 403],
-    ["/@scope/PKG", "package-not-allowed", 403],
-    ["/lodash", "package-not-allowed", 403],
-    ["/left-pad-evil", "package-not-allowed", 403],
-    ["/left-pa", "package-not-allowed", 403],
-    ["/@scope/pkg2", "package-not-allowed", 403],
-    ["/%6c%65%66%74%2d%70%61%64x", "package-not-allowed", 403],
+    ["/LEFT-PAD", "package-not-allowlisted", 403],
+    ["/Left-Pad", "package-not-allowlisted", 403],
+    ["/mixed", "package-not-allowlisted", 403],
+    ["/@Scope/pkg", "package-not-allowlisted", 403],
+    ["/@scope/PKG", "package-not-allowlisted", 403],
+    ["/lodash", "package-not-allowlisted", 403],
+    ["/left-pad-evil", "package-not-allowlisted", 403],
+    ["/left-pa", "package-not-allowlisted", 403],
+    ["/@scope/pkg2", "package-not-allowlisted", 403],
+    ["/%6c%65%66%74%2d%70%61%64x", "package-not-allowlisted", 403],
   ];
   for (const [url, reason, status] of cases) {
     test(`rejects ${JSON.stringify(url)} -> ${reason}`, () => {

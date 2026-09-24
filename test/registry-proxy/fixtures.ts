@@ -2,7 +2,7 @@ import http, { type IncomingHttpHeaders, type IncomingMessage, type ServerRespon
 import https from "node:https";
 import net from "node:net";
 import { parseConfig, type ProxyConfig } from "../../src/sandbox/registry-proxy/config.js";
-import type { DialTarget, TestDialSeam } from "../../src/sandbox/registry-proxy/dial.js";
+import type { DialTarget, NameResolver, TestDialSeam } from "../../src/sandbox/registry-proxy/dial.js";
 import { startRegistryProxy, type ProxyOptions, type RegistryProxy } from "../../src/sandbox/registry-proxy/server.js";
 
 // Test-only self-signed certificate for CN=localhost / SAN registry.test (valid to 2126).
@@ -57,6 +57,9 @@ XZ14B/ijgD6VEdaMBnvjQ4+uzfAdp6G3rtty3EtSGy2SUoL1GyKRp8k/d5aADHFD
 VbLqm59ruaHTH9x2eJZNVn0=
 -----END PRIVATE KEY-----
 `;
+
+/** Every name resolves to a routable public address; the seam then redirects the physical socket to loopback. The guard still runs on the logical answer. */
+export const PUBLIC_RESOLVER: NameResolver = { resolve4: async () => ["93.184.216.34"] };
 
 /** Canary secret: must never appear in any output of the proxy. */
 export const CANARY = "CANARY-tok-9f3a7c21d4b85e60aa17";
@@ -143,7 +146,7 @@ export async function startWorld(opts: WorldOptions = {}): Promise<World> {
     "evil.test:443": { protocol: "http:", hostname: "127.0.0.1", port: evil.port },
   };
   const testDial: TestDialSeam = (l) => table[`${l.hostname}:${l.port}`];
-  const proxy = await startRegistryProxy(config, { testDial, ...opts.proxy });
+  const proxy = await startRegistryProxy(config, { testDial, resolver: PUBLIC_RESOLVER, ...opts.proxy });
   return {
     proxy,
     registry,

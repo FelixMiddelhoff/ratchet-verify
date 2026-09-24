@@ -7,10 +7,16 @@ export interface RedirectState {
   maxRedirects: number;
   /** URLs already visited in this chain (including the current one). */
   visited: readonly string[];
+  /**
+   * Same-origin targets only: is this exactly an allowed package packument/tarball path?
+   * When it is not, the hop is treated like a cross-origin one (host allowlist, no credential).
+   * Default: everything on the registry origin counts as a package path.
+   */
+  isPackagePath?: (next: URL) => boolean;
 }
 
 export type RedirectDecision =
-  | { action: "follow"; url: URL; crossOrigin: boolean }
+  | { action: "follow"; url: URL; crossOrigin: boolean; /** true: this and every later hop must go without the credential */ dropCredential: boolean }
   | { action: "deny"; status: number; reason: string };
 
 /** host:port of a URL, default port filled in (https only). */
@@ -38,6 +44,7 @@ export function decideRedirect(current: URL, location: string | undefined, state
   if (state.visited.includes(next.href)) return { action: "deny", status: 508, reason: "redirect-loop" };
   // Exact origin equality; a shared suffix ("registry.example.com.evil.net") is a different origin.
   const crossOrigin = next.origin !== state.registryOrigin;
-  if (crossOrigin && !state.allowHosts.has(hostPortOf(next))) return { action: "deny", status: 403, reason: "redirect-host-not-allowed" };
-  return { action: "follow", url: next, crossOrigin };
+  const packagePath = !crossOrigin && (state.isPackagePath?.(next) ?? true);
+  if (!packagePath && !state.allowHosts.has(hostPortOf(next))) return { action: "deny", status: 403, reason: "redirect-host-not-allowed" };
+  return { action: "follow", url: next, crossOrigin, dropCredential: !packagePath };
 }

@@ -8,3 +8,7 @@ export * from "./request.js";
 export * from "./secret.js";
 export * from "./server.js";
 export * from "./sidecar.js";
+export * from "./gate.js";
+export * from "./netguard.js";
+export * from "./packument.js";
+export * from "./sink.js";

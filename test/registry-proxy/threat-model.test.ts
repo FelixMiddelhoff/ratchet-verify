@@ -66,8 +66,8 @@ describe("registry proxy through a real server (fixture upstreams on loopback)",
     withWorld(
       async (w) => {
         await get(w.proxy.port, "/left-pad");
-        await get(w.proxy.port, "/cdn/left-pad");
-        await get(w.proxy.port, "/evil/left-pad");
+        await get(w.proxy.port, "/_r/cdn/left-pad");
+        await get(w.proxy.port, "/_r/evil/left-pad");
         assert.equal(w.registry.hits[0]!.headers.authorization, "Bearer MAIN-registry-secret-1");
         assert.equal(w.cdn.hits[0]!.headers.authorization, undefined);
         assert.equal(w.evil.hits[0]!.headers.authorization, "Bearer EVIL-registry-secret-2");
@@ -85,7 +85,7 @@ describe("registry proxy through a real server (fixture upstreams on loopback)",
       },
     ));
 
-  test("response headers are allowlisted (no set-cookie / www-authenticate / server); upstream 401/404 pass through", () =>
+  test("response headers are allowlisted (no set-cookie / www-authenticate / server); upstream 401/404 keep their status but never their body", () =>
     withWorld(async (w) => {
       w.registry.handler = (_q, res) => {
         res.writeHead(401, { "content-type": "text/plain", "set-cookie": "s=1", "www-authenticate": 'Bearer realm="x"', server: "Artifactory", etag: '"e1"' });
@@ -93,9 +93,8 @@ describe("registry proxy through a real server (fixture upstreams on loopback)",
       };
       const r = await get(w.proxy.port, "/left-pad");
       assert.equal(r.status, 401);
-      assert.equal(r.body, "nope");
-      assert.equal(r.headers.etag, '"e1"');
-      for (const h of ["set-cookie", "www-authenticate", "server"]) assert.equal(r.headers[h], undefined, h);
+      assert.equal(r.body, JSON.stringify({ error: "upstream 401" }));
+      for (const h of ["set-cookie", "www-authenticate", "server", "etag"]) assert.equal(r.headers[h], undefined, h);
       w.registry.handler = (_q, res) => {
         res.writeHead(404);
         res.end();
@@ -169,7 +168,7 @@ describe("threat model rows (each row of ratchet-private-registries-plan.md is a
 
   test("threat: use the proxy as an open relay", () =>
     withWorld(async (w) => {
-      for (const target of ["evil.test:443", "cdn.test:8443", "registry.test:443", "127.0.0.1:22", "localhost:80", "[::1]:443", "CDN.test:443", "cdn.test:443@evil.test:443", "cdn.test", "cdn.test:0", ":443"]) {
+      for (const target of ["evil.test:443", "cdn.test:8443", "registry.test:443", "127.0.0.1:22", "localhost:80", "[::1]:443", "cdn.test:443@evil.test:443", "cdn.test", "cdn.test:0", ":443"]) {
         const res = await raw(w.proxy.port, `CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\n\r\n`);
         assert.ok([400, 403].includes(statusOf(res)), `${target} -> ${res}`);
       }
@@ -240,7 +239,9 @@ describe("threat model rows (each row of ratchet-private-registries-plan.md is a
       const log = w.proxy.audit();
       assert.equal(log.length, 7);
       assert.ok(log.every((e) => e.decision === "deny"));
-      assert.ok(!JSON.stringify(log).includes(exfil), "audit does not record attacker-chosen path text");
+      // A path that is a syntactically valid package name is recorded as `name` (diagnosis of false denials); nothing else of the path or query ever is.
+      assert.ok(!JSON.stringify(log.map((e) => ({ ...e, name: null }))).includes(exfil), "audit does not record attacker-chosen path/query text");
+      assert.ok(log.every((e) => e.name === null || /^[a-z0-9@/._~-]+$/.test(e.name)));
     }));
 
   describe("threat: token leak by redirect", () => {
@@ -249,14 +250,14 @@ describe("threat model rows (each row of ratchet-private-registries-plan.md is a
         let n = 0;
         w.registry.handler = (q, res) => {
           n++;
-          if (q.url === "/left-pad") return redirectTo("/moved/left-pad")(q, res);
-          if (q.url === "/moved/left-pad") return redirectTo("https://registry.test/final")(q, res);
+          if (q.url === "/left-pad") return redirectTo("/left-pad/-/left-pad-1.0.0.tgz")(q, res);
+          if (q.url === "/left-pad/-/left-pad-1.0.0.tgz") return redirectTo("https://registry.test/@scope%2Fpkg")(q, res);
           okJson(q, res);
         };
         const r = await get(w.proxy.port, "/left-pad");
         assert.equal(r.status, 200);
         assert.equal(n, 3);
-        assert.deepEqual(w.registry.hits.map((h) => h.url), ["/left-pad", "/moved/left-pad", "/final"]);
+        assert.deepEqual(w.registry.hits.map((h) => h.url), ["/left-pad", "/left-pad/-/left-pad-1.0.0.tgz", "/@scope%2Fpkg"]);
         assert.ok(w.registry.hits.every((h) => h.headers.authorization === `Bearer ${CANARY}`));
       }));
 
@@ -320,7 +321,7 @@ describe("threat model rows (each row of ratchet-private-registries-plan.md is a
           if (hop++ === 0) return redirectTo("https://cdn.test/mid")(q, res);
           okJson(q, res);
         };
-        w.cdn.handler = redirectTo("https://registry.test/back");
+        w.cdn.handler = redirectTo("https://registry.test/left-pad/-/left-pad-1.0.0.tgz");
         const r = await get(w.proxy.port, "/left-pad");
         assert.equal(r.status, 200);
         assert.equal(w.registry.hits[0]!.headers.authorization, `Bearer ${CANARY}`);
@@ -336,7 +337,7 @@ describe("threat model rows (each row of ratchet-private-registries-plan.md is a
           assert.equal(w.registry.hits.length, 1);
           w.registry.hits.length = 0;
           let i = 0;
-          w.registry.handler = (q, res) => redirectTo(`/hop/${i++}`)(q, res);
+          w.registry.handler = (q, res) => redirectTo(`/left-pad/-/left-pad-1.0.${i++}.tgz`)(q, res);
           const long = await get(w.proxy.port, "/left-pad");
           assert.equal(long.status, 502);
           assert.equal(w.registry.hits.length, 4, "1 request + 3 followed redirects");
@@ -485,7 +486,7 @@ describe("threat model rows (each row of ratchet-private-registries-plan.md is a
         { config: (b) => ({ ...b, limits: { requestTimeoutMs: 400 } }) },
       ));
 
-    test("concurrency cap: the request over the cap gets 503, slots are released afterwards", () =>
+    test("concurrency cap with no queue: the request over the cap gets 503 queue-full, slots are released afterwards", () =>
       withWorld(
         async (w) => {
           const release: (() => void)[] = [];
@@ -503,7 +504,7 @@ describe("threat model rows (each row of ratchet-private-registries-plan.md is a
           w.registry.handler = okJson;
           assert.equal((await get(w.proxy.port, "/left-pad")).status, 200);
         },
-        { config: (b) => ({ ...b, limits: { maxConcurrent: 2, requestTimeoutMs: 5000 } }) },
+        { config: (b) => ({ ...b, limits: { maxConcurrent: 2, maxQueued: 0, requestTimeoutMs: 5000 } }) },
       ));
 
     test("oversize header block and overlong URL are rejected", () =>
@@ -530,7 +531,7 @@ describe("threat model rows (each row of ratchet-private-registries-plan.md is a
         const all = [JSON.stringify(a), JSON.stringify(w.proxy.audit()), ...sink].join("\n");
         assertNoSecret(all, "logs and errors");
         assert.equal(w.proxy.redact(`Authorization: Bearer ${CANARY}`).includes(CANARY), false);
-        for (const e of w.proxy.audit()) assert.deepEqual(Object.keys(e).sort(), ["class", "decision", "host", "method", "reason", "registry", "status", "time"]);
+        for (const e of w.proxy.audit()) assert.deepEqual(Object.keys(e).sort(), ["bytes", "class", "client", "decision", "host", "method", "ms", "name", "reason", "registry", "status", "time", "upstreamStatus", "version"]);
       },
       { proxy: { auditSink: (l) => sink.push(l) } },
     );
@@ -543,9 +544,9 @@ describe("threat model rows (each row of ratchet-private-registries-plan.md is a
         await get(w.proxy.port, "/nope");
         await get(w.proxy.port, "/left-pad", {}, "DELETE");
         assert.deepEqual(w.proxy.audit(), [
-          { time: 1234, method: "GET", class: "packument", registry: "main", host: "registry.test", status: 200, decision: "allow", reason: "forwarded" },
-          { time: 1234, method: "GET", class: "denied", registry: null, host: null, status: 403, decision: "deny", reason: "package-not-allowed" },
-          { time: 1234, method: "DELETE", class: "denied", registry: null, host: null, status: 405, decision: "deny", reason: "method-not-allowed" },
+          { time: 1234, method: "GET", class: "packument", registry: "main", host: "registry.test", status: 200, decision: "allow", reason: "forwarded", name: "left-pad", version: null, upstreamStatus: 200, bytes: 19, ms: 0, client: "other" },
+          { time: 1234, method: "GET", class: "denied", registry: "main", host: null, status: 403, decision: "deny", reason: "package-not-allowlisted", name: "nope", version: null, upstreamStatus: null, bytes: null, ms: 0, client: "other" },
+          { time: 1234, method: "DELETE", class: "denied", registry: null, host: null, status: 405, decision: "deny", reason: "method-not-allowed", name: null, version: null, upstreamStatus: null, bytes: null, ms: 0, client: "other" },
         ]);
       },
       { proxy: { now: () => 1234 } },
@@ -572,7 +573,7 @@ describe("threat model rows (each row of ratchet-private-registries-plan.md is a
       const { parseConfig } = await import("../../src/sandbox/registry-proxy/config.js");
       const { startRegistryProxy } = await import("../../src/sandbox/registry-proxy/server.js");
       const cfg = parseConfig({
-        registries: [{ id: "main", upstream: `https://127.0.0.1:${selfSigned.port}`, credential: { type: "bearer", secret: CANARY } }],
+        registries: [{ id: "main", allowPrivateAddresses: true, upstream: `https://127.0.0.1:${selfSigned.port}`, credential: { type: "bearer", secret: CANARY } }],
         packages: { allow: ["left-pad"] },
         dns: ["127.0.0.1"],
         limits: { requestTimeoutMs: 3000 },

@@ -7,7 +7,7 @@ import { describe, test } from "node:test";
 import { parseConfig } from "../../src/sandbox/registry-proxy/config.js";
 import { startRegistryProxy, type RegistryProxy } from "../../src/sandbox/registry-proxy/server.js";
 import { findCredentialLeaks, findConfiguredSecretsInProcess, READY_PREFIX, runSidecar, type SidecarIo } from "../../src/sandbox/registry-proxy/sidecar.js";
-import { CANARY, get, raw, statusOf } from "./fixtures.js";
+import { CANARY, PUBLIC_RESOLVER, get, raw, statusOf } from "./fixtures.js";
 
 interface Tunnel {
   proxy: RegistryProxy;
@@ -38,6 +38,7 @@ async function startTunnelWorld(limits: Record<string, number> = {}): Promise<Tu
     limits: { requestTimeoutMs: 3000, connectTimeoutMs: 500, connectIdleTimeoutMs: 300, ...limits },
   });
   const proxy = await startRegistryProxy(cfg, {
+    resolver: PUBLIC_RESOLVER,
     testDial: (l) => (l.hostname === "bin.test" ? { protocol: "http:", hostname: "127.0.0.1", port: echoPort } : l.hostname === "dead.test" ? { protocol: "http:", hostname: "127.0.0.1", port: 1 } : undefined),
   });
   return {
@@ -155,16 +156,20 @@ describe("CONNECT handler", () => {
     }
   });
 
-  test("CONNECT shares the concurrency cap with normal requests", async () => {
-    const t = await startTunnelWorld({ maxConcurrent: 1, connectIdleTimeoutMs: 5000 });
+  test("CONNECT tunnels are NOT counted against the request gate; they have their own cap (maxTunnels)", async () => {
+    const t = await startTunnelWorld({ maxConcurrent: 1, maxTunnels: 2, connectIdleTimeoutMs: 5000 });
     try {
       const first = await tunnel(t.proxy.port, "bin.test:443");
-      assert.equal(first.status, 200);
       const second = await tunnel(t.proxy.port, "bin.test:443");
-      assert.equal(second.status, 503);
-      assert.equal((await get(t.proxy.port, "/left-pad")).status, 503);
-      first.socket.destroy();
-      second.socket.destroy();
+      assert.equal(first.status, 200);
+      assert.equal(second.status, 200);
+      const third = await tunnel(t.proxy.port, "bin.test:443");
+      assert.equal(third.status, 503, "tunnel cap");
+      assert.equal(t.proxy.audit().at(-1)?.reason, "tunnel-limit");
+      // two open tunnels, maxConcurrent 1: a normal request is still served (it reaches the upstream and fails there, not at the gate)
+      const r = await get(t.proxy.port, "/left-pad");
+      assert.notEqual(r.status, 503, "requests are not starved by tunnels");
+      for (const s of [first, second, third]) s.socket.destroy();
     } finally {
       await t.close();
     }

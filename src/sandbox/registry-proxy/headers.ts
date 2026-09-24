@@ -23,6 +23,11 @@ export interface UpstreamHeaderContext {
   registry: RegistryConfig;
   /** True once any earlier hop of this request left the registry origin: credentials are gone for good. */
   tainted: boolean;
+  /**
+   * Packuments are rewritten by the proxy: ask for identity encoding and never forward the client's
+   * validators (the client's etag describes OUR rewritten body; conditional handling is local).
+   */
+  rewriting?: boolean;
 }
 
 /**
@@ -35,6 +40,11 @@ export function buildUpstreamHeaders(client: IncomingHttpHeaders, target: URL, c
   for (const [name, shape] of Object.entries(FORWARDED)) {
     const v = client[name];
     if (typeof v === "string" && shape.test(v)) out[name] = v;
+  }
+  if (ctx.rewriting) {
+    delete out["if-none-match"];
+    delete out["if-modified-since"];
+    out["accept-encoding"] = "identity";
   }
   if (!out["accept-encoding"]) out["accept-encoding"] = "identity";
   if (!ctx.tainted && ctx.registry.credential && target.protocol === "https:" && target.origin === ctx.registry.upstreamOrigin) {
