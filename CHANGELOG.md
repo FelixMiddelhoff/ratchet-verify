@@ -5,7 +5,11 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-24
+
 ### Added
+- Usage scanner (#6): re-exports through the project's own modules (`export {x} from`, `export *`, chains, `index` files) are followed, so uses in importing files count as package use. Local shadowing (parameters, `let`/`const`/`var`, functions, classes, catch and loop variables) is ignored; unsure cases still count. CommonJS forwarding (`module.exports = require('pkg')` and variants) is followed. Forms it cannot follow (`wrap(pkg)`, computed require paths, unstable re-export chains) are reported in `UsageScan.unresolved` and downgrade safe to safe (partial). Not handled: tsconfig path aliases and workspace specifiers.
+- Corpus: five more cases with independently verified outcomes (debug, is-number, yargs, uuid main-entry and the deep-require uuid case that is broken).
 - Container mode restricts egress for the test phase (#23): the project's tests run in a separate container with `--network none`, so a test (or anything it loads) cannot send data out. The install phase keeps the network. Opt out with `--network open` / `"containerNetwork": "open"` (Action input `network`) for suites that need the network.
 - Bisector flaky detection (#8): the reported first-bad and last-good versions are re-run once each. A flipped result gives status `unstable` (verdict stays broken, reads "flaky suite: result not reliable", no exact culprit); inconclusive or unaffordable re-runs are marked unconfirmed. The 2 re-runs are reserved from `maxInstalls`, so total installs never exceed it. `BisectResult.confirmation`, `bisect(..., { confirm })`.
 
@@ -15,7 +19,6 @@ All notable changes to this project are documented here, in
 - Removed `registry-url` from setup-node in release workflow (npm Trusted Publisher OIDC handles registry authentication).
 - Bumped `actions/setup-node` from v4 to v7 in GitHub Action.
 - Changelog matching (#5): common-word symbols (`option`, `parse`, `get`, ...) named only in bare prose are capped at medium confidence in breaking sections and no longer match plain lines of a major release. Backticks, `.symbol` and `symbol(` keep full strength. Nothing is dropped from breaking sections or removal notes.
-
 - Changelog matching: a `pkg/sub` deep-import token (e.g. `require('uuid/v4')`) no longer matches a root-import member of the same name (`require("uuid").v4`). It matches only sites importing that subpath, which stay high confidence; root-import use gets no hit from that bullet. Namespace sites from subpath imports now carry `subpath`.
 - Changelog matching: a subpath token no longer matches inside a URL in the notes (`yargs/yargs` in `github.com/yargs/yargs/issues/1`), which had turned the yargs 15 to 16 bump risky.
 
@@ -50,5 +53,6 @@ All notable changes to this project are documented here, in
 - A missing `package-lock.json` now says what ratchet supports (and mentions a
   found `yarn.lock` / `pnpm-lock.yaml`) instead of a bare `ENOENT`.
 
+[0.3.0]: https://github.com/FelixMiddelhoff/ratchet-verify/releases/tag/v0.3.0
 [0.2.0]: https://github.com/FelixMiddelhoff/ratchet-verify/releases/tag/v0.2.0
 [0.1.1]: https://github.com/FelixMiddelhoff/ratchet-verify/releases/tag/v0.1.1
