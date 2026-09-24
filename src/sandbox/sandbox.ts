@@ -22,7 +22,8 @@ export interface IsolationInfo {
 export interface Sandbox {
   readonly dir: string;
   readonly isolation: IsolationLevel;
-  run(command: string, args: string[], timeoutMs: number): Promise<RunResult>;
+  /** `offline` marks a phase that needs no network (the test run); container mode then drops it. Temp-dir cannot. */
+  run(command: string, args: string[], timeoutMs: number, phase?: { offline?: boolean }): Promise<RunResult>;
 }
 
 export interface SandboxOptions {
@@ -63,5 +64,5 @@ function hostSandbox(dir: string, paths: ReturnType<typeof sandboxPaths>, option
 }
 
 function containerSandbox(dir: string, root: string, settings: ContainerSettings): Sandbox {
-  return { dir, isolation: "container", run: (command, args, timeoutMs) => runInContainer(settings, root, command, args, timeoutMs) };
+  return { dir, isolation: "container", run: (command, args, timeoutMs, phase) => runInContainer(settings, root, command, args, timeoutMs, undefined, phase) };
 }

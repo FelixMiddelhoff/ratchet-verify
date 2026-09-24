@@ -2,10 +2,13 @@ import { randomBytes } from "node:crypto";
 import { runCommand, type RunOptions, type RunResult } from "./exec.js";
 
 export type ContainerRuntime = "docker" | "podman";
+export type ContainerNetwork = "tests-offline" | "open";
 
 export interface ContainerSettings {
   runtime: ContainerRuntime;
   image: string;
+  /** "tests-offline" (default): the test phase runs with `--network none`; "open" keeps the network everywhere. */
+  network?: ContainerNetwork;
   /** Rootless engines map the container's root to the invoking user, so no `--user` is wanted. */
   rootless: boolean;
 }
@@ -82,6 +85,8 @@ export interface RunArgsInput {
   args: string[];
   /** Host uid:gid for engines that need `--user` so files stay removable; omitted where not applicable. */
   user?: string;
+  /** No network at all inside the container (`--network none`): nothing can be sent or fetched. */
+  offline?: boolean;
 }
 
 /**
@@ -101,6 +106,7 @@ export function buildRunArgs(input: RunArgsInput): string[] {
     "--cap-drop", "ALL",
     "--security-opt", "no-new-privileges",
     "--pids-limit", "1024",
+    ...(input.offline ? ["--network", "none"] : []),
     ...(input.user ? ["--user", input.user] : []),
     ...env,
     settings.image,
@@ -124,9 +130,11 @@ export async function runInContainer(
   args: string[],
   timeoutMs: number,
   exec: Exec = runCommand,
+  phase: { offline?: boolean } = {},
 ): Promise<RunResult> {
   const name = `ratchet-${randomBytes(6).toString("hex")}`;
-  const runArgs = buildRunArgs({ settings, root, name, command, args, user: hostUser(settings) });
+  const offline = phase.offline === true && (settings.network ?? "tests-offline") === "tests-offline";
+  const runArgs = buildRunArgs({ settings, root, name, command, args, user: hostUser(settings), offline });
   const result = await exec({ command: settings.runtime, args: runArgs, cwd: process.cwd(), env: hostEnv(), timeoutMs });
   if (result.timedOut) await probe(settings.runtime, ["kill", name], exec).catch(() => undefined);
   return result;

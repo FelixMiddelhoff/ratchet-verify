@@ -15,6 +15,8 @@ export interface Config {
   containerRuntime: "auto" | "docker" | "podman";
   /** Image for container isolation; defaults to node:24. */
   containerImage?: string;
+  /** Container mode: "tests-offline" (default) runs the test phase with no network; "open" keeps it. */
+  containerNetwork: "tests-offline" | "open";
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -24,6 +26,7 @@ export const DEFAULT_CONFIG: Config = {
   failOn: "broken",
   isolation: "temp-dir",
   containerRuntime: "auto",
+  containerNetwork: "tests-offline",
 };
 
 export const CONFIG_FILE = ".ratchetrc";
@@ -62,6 +65,9 @@ export function parseConfig(text: string): Config {
   }
   if (!["auto", "docker", "podman"].includes(config.containerRuntime)) {
     throw new Error(`${CONFIG_FILE}: "containerRuntime" must be "auto", "docker" or "podman"`);
+  }
+  if (!["tests-offline", "open"].includes(config.containerNetwork)) {
+    throw new Error(`${CONFIG_FILE}: "containerNetwork" must be "tests-offline" or "open"`);
   }
   if (config.containerImage !== undefined && (typeof config.containerImage !== "string" || config.containerImage === "")) {
     throw new Error(`${CONFIG_FILE}: "containerImage" must be a non-empty image name`);

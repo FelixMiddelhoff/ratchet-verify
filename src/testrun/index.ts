@@ -55,7 +55,7 @@ export async function installAndTest(sandbox: Sandbox, options: TestRunOptions =
   const install = await sandbox.run(manager, FROZEN_INSTALL[manager], options.installTimeoutMs ?? INSTALL_TIMEOUT_MS);
   if (install.exitCode !== 0) return { status: "install-failed", result: install };
 
-  const result = await sandbox.run(manager, ["test"], options.testTimeoutMs ?? TEST_TIMEOUT_MS);
+  const result = await sandbox.run(manager, ["test"], options.testTimeoutMs ?? TEST_TIMEOUT_MS, { offline: true });
   if (result.timedOut) return { status: "timed-out", result };
   return { status: result.exitCode === 0 ? "passed" : "failed", result };
 }

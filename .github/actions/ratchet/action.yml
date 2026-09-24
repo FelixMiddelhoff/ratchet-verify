@@ -23,6 +23,9 @@ inputs:
   isolation:
     description: 'How installs and tests are isolated: "temp-dir" (default), "container" (docker or podman, available on GitHub-hosted Ubuntu runners) or "auto".'
     default: temp-dir
+  network:
+    description: 'Container mode only: "tests-offline" (default, the test phase runs with no network) or "open".'
+    default: tests-offline
   ratchet-version:
     description: npm version or tag of ratchet-verify to run.
     default: latest
@@ -55,6 +58,7 @@ runs:
         RATCHET_DIR: ${{ inputs.project-dir }}
         RATCHET_FAIL_ON: ${{ inputs.fail-on }}
         RATCHET_ISOLATION: ${{ inputs.isolation }}
+        RATCHET_NETWORK: ${{ inputs.network }}
         RATCHET_VERSION: ${{ inputs.ratchet-version }}
       run: |
         report_dir="${RUNNER_TEMP}/ratchet-report"
@@ -62,6 +66,7 @@ runs:
         # Older ratchet-verify versions don't know --isolation, so it is only passed when asked for.
         extra=()
         if [ "${RATCHET_ISOLATION}" != "temp-dir" ]; then extra=(--isolation "${RATCHET_ISOLATION}"); fi
+        if [ "${RATCHET_NETWORK}" != "tests-offline" ]; then extra+=(--network "${RATCHET_NETWORK}"); fi
         npx --yes "ratchet-verify@${RATCHET_VERSION}" "${RATCHET_DIR}" \
           --base "${RATCHET_BASE}" --fail-on "${RATCHET_FAIL_ON}" --report-dir "${report_dir}" "${extra[@]}"
         code=$?

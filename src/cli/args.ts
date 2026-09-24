@@ -13,6 +13,7 @@ export interface CliArgs {
   format: OutputFormat;
   failOn?: "broken" | "risky";
   isolation?: "temp-dir" | "container" | "auto";
+  network?: "tests-offline" | "open";
   /** Also write report.json, report.md and report.sarif here, whatever the stdout format. */
   reportDir?: string;
   help: boolean;
@@ -32,7 +33,8 @@ Usage: ratchet [project-dir] (--base <git-ref> | --old <lockfile>) [options]
   --markdown          Markdown output, as posted in pull request comments
   --report-dir <dir>  also write report.json, report.md and report.sarif into <dir>
   --isolation <mode>  temp-dir (default), container (docker/podman) or auto
-  --fail-on <level>   exit 1 when the overall verdict is "broken" (default) or "risky"
+  --network <mode>    container mode: tests-offline (default, tests get no network) or open
+  --fail-on <level>  exit 1 when the overall verdict is "broken" (default) or "risky"
   -v, --version       print the version
   -h, --help          show this help
 
@@ -54,6 +56,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
       "report-dir": { type: "string" },
       "fail-on": { type: "string" },
       isolation: { type: "string" },
+      network: { type: "string" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
     },
@@ -75,6 +78,11 @@ export function parseCliArgs(argv: string[]): CliArgs {
     throw new Error(`--isolation must be "temp-dir", "container" or "auto", got "${isolation}"`);
   }
 
+  const network = values.network;
+  if (network !== undefined && network !== "tests-offline" && network !== "open") {
+    throw new Error(`--network must be "tests-offline" or "open", got "${network}"`);
+  }
+
   return {
     projectDir: positionals[0] ?? ".",
     base: values.base,
@@ -84,6 +92,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
     format: values.json ? "json" : values.sarif ? "sarif" : values.markdown ? "markdown" : "text",
     failOn,
     isolation,
+    network,
     reportDir: values["report-dir"],
     help: values.help ?? false,
     version: values.version ?? false,

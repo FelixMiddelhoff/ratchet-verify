@@ -48,13 +48,14 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
     const config = await loadConfig(projectDir);
     if (args.failOn) config.failOn = args.failOn;
     if (args.isolation) config.isolation = args.isolation;
+    if (args.network) config.containerNetwork = args.network;
 
     const oldLockfile = args.oldLockfile ? await readFile(args.oldLockfile, "utf8") : await readFileAtRef(projectDir, args.base!, LOCKFILE);
     const newLockfile = await readNewLockfile(args.newLockfile ?? join(projectDir, LOCKFILE), projectDir);
     const manifest = JSON.parse(await readFile(join(projectDir, "package.json"), "utf8"));
     const oldPackageJson = await readOldPackageJson(args, projectDir);
 
-    const isolation = await resolveIsolation({ mode: config.isolation, runtime: config.containerRuntime, image: config.containerImage });
+    const isolation = await resolveIsolation({ mode: config.isolation, runtime: config.containerRuntime, image: config.containerImage, network: config.containerNetwork });
     for (const note of isolation.notes) io.err(`ratchet: ${note}`);
 
     const deps = (makeDeps ?? defaultDeps(config, io.env))({ projectDir, oldLockfile, oldPackageJson, isolation });

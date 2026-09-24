@@ -1,4 +1,4 @@
-import { DEFAULT_IMAGE, detectRuntime, ensureImage, type ContainerRuntime, type ContainerSettings, type Exec } from "./container.js";
+import { DEFAULT_IMAGE, detectRuntime, ensureImage, type ContainerNetwork, type ContainerRuntime, type ContainerSettings, type Exec } from "./container.js";
 import { runCommand } from "./exec.js";
 import type { IsolationInfo } from "./sandbox.js";
 
@@ -8,6 +8,7 @@ export interface IsolationChoice {
   mode: IsolationMode;
   runtime: ContainerRuntime | "auto";
   image?: string;
+  network?: ContainerNetwork;
 }
 
 export interface ResolvedIsolation {
@@ -38,7 +39,7 @@ export async function resolveIsolation(choice: IsolationChoice, exec: Exec = run
     };
   }
 
-  const container: ContainerSettings = { runtime: detected.runtime, rootless: detected.rootless, image: choice.image ?? DEFAULT_IMAGE };
+  const container: ContainerSettings = { runtime: detected.runtime, rootless: detected.rootless, image: choice.image ?? DEFAULT_IMAGE, network: choice.network ?? "tests-offline" };
   await ensureImage(container, exec);
   return { info: { level: "container", runtime: container.runtime, image: container.image }, container, notes: [] };
 }
