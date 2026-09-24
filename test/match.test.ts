@@ -147,6 +147,14 @@ test("subpath bullet still hits a site importing that subpath", () => {
   assert.equal(runPkg([named]).hits[0]?.confidence, "high");
 });
 
+test("subpath token inside a changelog URL is not a mention", () => {
+  const body = "### Breaking Changes\n- drop support for EOL Node 8 ([#1686](https://www.github.com/yargs/yargs/issues/1686))";
+  const deep: UsageSite = { ...site("*"), kind: "require", subpath: "yargs/yargs" };
+  const { hits } = matchBreakingChanges({ entries: [entry("16.0.0", body)], sites: [deep], oldVersion: "15.4.1", newVersion: "16.0.0", packageName: "yargs" });
+  // A low whole-module hit is expected (breaking section + whole-module use); high/medium would be the URL match.
+  assert.deepEqual(hits.filter((h) => h.confidence !== "low"), []);
+});
+
 test("root member named in prose elsewhere still matches when subpath token is masked", () => {
   const body = `${DEEP}\n- \`v4\` now returns a string`;
   const [hit] = matchBreakingChanges({ entries: [entry("8.0.0", body)], sites: [site("v4")], oldVersion: "7.0.3", newVersion: "8.0.0", packageName: "uuid" }).hits;

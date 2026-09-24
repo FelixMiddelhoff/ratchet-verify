@@ -80,7 +80,7 @@ async function runCase(testCase) {
     const verdict = report.verdicts.find((v) => v.name === testCase.expect.dependency);
     if (!verdict) return `no verdict for ${testCase.expect.dependency}`;
     const { expect } = testCase;
-    if (report.overall !== expect.overall) return `overall ${report.overall}, expected ${expect.overall}`;
+    if (report.overall !== expect.overall) return `overall ${report.overall}, expected ${expect.overall}\n      ${verdict.name}: ${verdict.status}/${verdict.confidence}: ${verdict.summary}\n      ${JSON.stringify(verdict.evidence).slice(0, 800)}`;
     if (verdict.status !== expect.status) return `${verdict.name} is ${verdict.status}, expected ${expect.status}\n      ${verdict.summary}`;
     if (expect.confidence && verdict.confidence !== expect.confidence) return `confidence ${verdict.confidence}, expected ${expect.confidence}`;
     if (expect.summary && !expect.summary.test(verdict.summary)) return `summary "${verdict.summary}" does not match ${expect.summary}`;

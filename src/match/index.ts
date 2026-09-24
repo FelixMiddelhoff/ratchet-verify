@@ -60,6 +60,10 @@ export function matchBreakingChanges(input: MatchInput): MatchResult {
   return { hits, majorBoundary, hasBreakingSections };
 }
 
+function maskUrls(text: string): string {
+  return text.replace(/(?:https?:\/\/|www\.)[^\s)\]>]+/g, (url) => " ".repeat(url.length));
+}
+
 /**
  * A changelog token like `pkg/v4` names a deep import, not the member `v4`. Symbols inside such
  * a subpath only match sites that import that very subpath; root-import member use never does
@@ -74,7 +78,8 @@ function matchSite(
 ): Pick<BreakingHit, "confidence" | "reason" | "excerpt"> | undefined {
   const visible = packageName ? lines.map((l) => ({ ...l, text: maskSubpaths(l.text, packageName, site.subpath) })) : lines;
   const named = site.symbol === "*" || site.symbol === "default" ? undefined : findMention(visible, site.symbol, majorRelease);
-  const deep = site.subpath ? findMention(lines, site.subpath, majorRelease) : undefined;
+  // URLs are masked so `yargs/yargs` cannot match inside `github.com/yargs/yargs/issues/1`.
+  const deep = site.subpath ? findMention(lines.map((l) => ({ ...l, text: maskUrls(l.text) })), site.subpath, majorRelease) : undefined;
   if (named && deep) return CONFIDENCE_ORDER.indexOf(named.confidence) <= CONFIDENCE_ORDER.indexOf(deep.confidence) ? named : deep;
   return named ?? deep;
 }
