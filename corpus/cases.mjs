@@ -33,6 +33,19 @@ export const cases = [
     expect: { overall: "broken", dependency: "chalk", status: "broken", summary: /broken by 5\.0\.0/ },
   },
   {
+    name: "chalk 4.1.2 -> 5.3.0 via yarn classic (yarn.lock, yarn add bisect probes)",
+    source: "real",
+    manager: "yarn",
+    bump: { name: "chalk", old: "4.1.2", new: "5.3.0" },
+    files: {
+      "test.js": testScript(`
+        const chalk = require("chalk");
+        if (typeof chalk.red("x") !== "string") throw new Error("chalk broke");
+      `),
+    },
+    expect: { overall: "broken", dependency: "chalk", status: "broken", summary: /broken by 5\.0\.0/ },
+  },
+  {
     name: "faker 5.5.3 -> 6.6.6 (2022 maintainer sabotage, still on npm)",
     source: "real",
     bump: { name: "faker", old: "5.5.3", new: "6.6.6" },

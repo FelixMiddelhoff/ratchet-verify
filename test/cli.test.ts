@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseCliArgs } from "../src/cli/args.js";
 import { runCli, type DepsFactory } from "../src/cli/main.js";
@@ -82,7 +83,7 @@ test("failing bump: exit 1; --json output parses", async () => {
 test("--fail-on risky turns a risky verdict into exit 1, default does not", async () => {
   await withTempProject({ ...files, "package.json": pkg({ dependencies: { lib: "^1" } }) }, async (dir) => {
     // A project with no test script yields the "unverified" (risky) verdict.
-    const noTests: DepsFactory = () => ({ ...fakeDeps("passed")({ projectDir: dir, oldLockfile: "", isolation: { info: { level: "temp-dir" }, notes: [] } }), testLockfile: async () => ({ status: "no-test-script" as const }) });
+    const noTests: DepsFactory = () => ({ ...fakeDeps("passed")({ projectDir: dir, oldLockfile: "", manager: "npm", isolation: { info: { level: "temp-dir" }, notes: [] } }), testLockfile: async () => ({ status: "no-test-script" as const }) });
     const base = [dir, "--old", join(dir, "old-lock.json")];
     assert.equal(await runCli(base, capture().io, noTests), 0);
     assert.equal(await runCli([...base, "--fail-on", "risky"], capture().io, noTests), 1);
@@ -137,10 +138,10 @@ test("missing lockfile: explains what is supported instead of ENOENT", async () 
     assert.equal(await runCli([dir, "--old", join(dir, "old.json")], io, fakeDeps("passed")), 2);
     assert.match(err[0]!, /no lockfile at .*npm install/);
   });
-  await withTempProject({ "package.json": pkg({}), "old.json": lock("1.0.0"), "yarn.lock": "" }, async (dir) => {
+  await withTempProject({ "package.json": pkg({}), "old.json": lock("1.0.0"), "pnpm-lock.yaml": "" }, async (dir) => {
     const { io, err } = capture();
     assert.equal(await runCli([dir, "--old", join(dir, "old.json")], io, fakeDeps("passed")), 2);
-    assert.match(err[0]!, /found yarn\.lock, but only npm's package-lock\.json is supported/);
+    assert.match(err[0]!, /found pnpm-lock\.yaml, but only package-lock\.json and yarn\.lock are supported/);
   });
 });
 
@@ -148,4 +149,36 @@ test("--version prints the package version", async () => {
   const { io, out } = capture();
   assert.equal(await runCli(["--version"], io), 0);
   assert.match(out[0]!, /^\d+\.\d+\.\d+/);
+});
+
+const yarnLock = (v: string) => `# yarn lockfile v1
+
+
+lib@^1:
+  version "${v}"
+  resolved "https://registry.yarnpkg.com/lib/-/lib-${v}.tgz#abc"
+`;
+
+test("yarn.lock project: lockfile detected, base read with git show, manager passed to deps", async () => {
+  await withTempProject({ "package.json": pkg({ dependencies: { lib: "^1" }, scripts: { test: "x" } }), "yarn.lock": yarnLock("1.0.0") }, async (dir) => {
+    const git = (...a: string[]) => execFileSync("git", ["-c", "user.email=a@b.c", "-c", "user.name=t", ...a], { cwd: dir });
+    git("init", "-q");
+    git("add", ".");
+    git("commit", "-q", "-m", "base");
+    await writeFile(join(dir, "yarn.lock"), yarnLock("1.1.0"));
+    const seen: string[] = [];
+    const factory: DepsFactory = (o) => (seen.push(o.manager), fakeDeps("passed")(o));
+    const { io, out } = capture();
+    assert.equal(await runCli([dir, "--base", "HEAD", ], io, factory), 0);
+    assert.deepEqual(seen, ["yarn"]);
+    assert.match(out[0]!, /lib 1\.0\.0 -> 1\.1\.0 \(direct\)/);
+  });
+});
+
+test("pnpm lockfile alone is refused with a clear message", async () => {
+  await withTempProject({ "package.json": pkg({}), "pnpm-lock.yaml": "" }, async (dir) => {
+    const { io, err } = capture();
+    assert.equal(await runCli([dir, "--base", "HEAD"], io, fakeDeps("passed")), 2);
+    assert.match(err[0]!, /pnpm lockfiles are not supported yet/);
+  });
 });
