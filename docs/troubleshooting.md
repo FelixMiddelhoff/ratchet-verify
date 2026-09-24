@@ -33,6 +33,14 @@ Container isolation was requested but neither `docker info` nor `podman info`
 succeeded. Start the engine (Docker Desktop, `systemctl start docker`,
 `podman machine start`), or use `--isolation auto` to fall back with a warning.
 
+**`isolation "container": docker is in Windows-containers mode, but ratchet needs Linux containers. …`**
+Docker answered but runs Windows containers (Docker Desktop default on
+Windows, and GitHub `windows-latest` runners), so the Linux `node` image and the
+`/sandbox` mount cannot work. Switch Docker Desktop to Linux containers (tray
+menu, or `DockerCli.exe -SwitchLinuxEngine`), use podman, or pass
+`--isolation temp-dir`. With `--isolation auto` ratchet falls back to temp-dir
+and prints this as a note.
+
 **`could not pull container image node:24 with docker: …`**
 The image is pulled up front. Check network access and registry login, or set
 `containerImage` in `.ratchetrc` to an image you can pull (it needs Node and
