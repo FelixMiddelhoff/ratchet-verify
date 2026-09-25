@@ -8,6 +8,8 @@ import { detectEngine, type ContainerSettings } from "../../src/sandbox/containe
 import { allowedPackageNames, buildProxyConfig, createRealEngine, defaultBridge, ProxyTopologyError, withProxyTopology, type Engine } from "../../src/sandbox/proxy-topology/index.js";
 import { Credential, secretForms } from "../../src/sandbox/registry-proxy/index.js";
 import { withSandbox } from "../../src/sandbox/sandbox.js";
+import { suspiciousDenials } from "../../src/pipeline/registry-proxy.js";
+import { buildReport } from "../../src/report/index.js";
 import { FIXTURE_JS, TRAP_JS } from "./registry-fixture.js";
 
 /**
@@ -109,6 +111,7 @@ describe("package manager through the proxy on a real engine", () => {
           assert.ok(reqs.every((l) => l.endsWith(`auth=${want}`)), "every upstream request carried the injected token: " + reqs.join("\n"));
           const audit = topo.audit();
           assert.ok(audit.some((a) => a.class === "tarball" && a.decision === "allow"), JSON.stringify(audit));
+          assert.deepEqual(suspiciousDenials(audit), [], `a normal ${c.manager} install must not look suspicious: ${JSON.stringify(audit.filter((x) => x.decision === "deny"))}`);
           for (const form of secretForms(CANARY)) assert.ok(!JSON.stringify([audit, topo.diagnostics()]).includes(form));
         });
       } finally {
@@ -166,6 +169,13 @@ describe("package manager through the proxy on a real engine", () => {
           });
           const audit = topo.audit();
           assert.ok(audit.some((a) => a.class === "tarball" && a.decision === "allow"));
+          // The script's attempts through the proxy are refused, counted, and turn a passing run into a risky one.
+          await new Promise((r) => setTimeout(r, 300));
+          const suspicious = suspiciousDenials(topo.audit());
+          assert.ok(suspicious.some((x) => x.class === "connect" && x.reason === "host-not-allowed"), JSON.stringify(suspicious));
+          assert.ok(suspicious.some((x) => x.reason === "package-not-allowlisted"), JSON.stringify(suspicious));
+          const info = { registries: [], allowlist: "on" as const, allowHosts: [], allowedPackages: 1, discoveredPackages: [], requestsAllowed: 0, requestsDenied: suspicious.length, suspicious, auditTruncated: false };
+          assert.equal(buildReport([], { level: "container" }, info).overall, "risky");
         });
       } finally {
         await e.run(s.runtime === "podman" ? ["rm", "-f", "-t", "0", name] : ["rm", "-f", name]);

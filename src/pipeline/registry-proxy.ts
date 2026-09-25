@@ -32,13 +32,13 @@ export interface RegistryProxyOptions {
   engine?: Engine;
 }
 
-/** Refusals a normal package-manager install does not cause (npm's own `/-/` API probes are the only known benign ones). */
-const BENIGN_DENIALS = new Set(["npm-api-path"]);
+/** Refusals a normal run causes: npm's own `/-/` API probes, and ratchet's isolation self-test, which asks the proxy for `/` to prove it is reachable. */
+const BENIGN_DENIALS = new Set(["denied:npm-api-path", "invalid:empty-segment"]);
 
 export function suspiciousDenials(audit: readonly AuditEntry[]): RegistryProxyInfo["suspicious"] {
   const counts = new Map<string, { class: string; reason: string; name?: string; count: number }>();
   for (const e of audit) {
-    if (e.decision !== "deny" || BENIGN_DENIALS.has(e.reason)) continue;
+    if (e.decision !== "deny" || BENIGN_DENIALS.has(`${e.class}:${e.reason}`)) continue;
     const key = `${e.class}
 ${e.reason}
 ${e.name ?? ""}`;

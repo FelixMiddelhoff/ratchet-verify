@@ -334,5 +334,5 @@ test("suspicious refusals escalate a plainly safe run to risky and are shown wit
   assert.match(renderMarkdown(report), /> ⚠️ SUSPICIOUS install activity/);
   assert.equal(buildReport([safe()], { level: "container" }, { ...info, suspicious: [] }).overall, "safe");
   assert.equal(describeSuspicious({ ...info, suspicious: [] }), undefined);
-  assert.equal(suspiciousDenials([entry("denied", "npm-api-path")]).length, 0, "npm's own /-/ probes are benign");
+  assert.equal(suspiciousDenials([entry("denied", "npm-api-path"), entry("invalid", "empty-segment")]).length, 0, "npm's own /-/ probes and the self-test's GET / are benign");
 });

