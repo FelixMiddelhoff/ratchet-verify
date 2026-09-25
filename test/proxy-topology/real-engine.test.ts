@@ -252,10 +252,13 @@ describe("proxy topology on a real engine", () => {
       await withProxyTopology({ settings: s, config, engine: e }, async (topo) => {
         // control: the real topology passes
         await runSelfTest({ engine: e, settings: s, network: topo.networkName, sidecarName: topo.sidecarName, sidecarPort: 3128, name: `${topo.sidecarName}-ok` });
-        // broken: same checks from a sandbox that sits on the engine's default (egress) network
+        // broken: same checks from a sandbox on a user network that is NOT internal (has egress); engine mode names like `bridge` are refused by buildRunArgs
+        const open = `ratchet-net-open${topo.runId.slice(0, 6)}`;
+        const made = await e.run(["network", "create", "--label", `ratchet.run=${topo.runId}`, open]);
+        assert.equal(made.exitCode, 0, made.output);
         const err = await runSelfTest({
-          engine: e, settings: s, network: defaultBridge(s.runtime), scanNetwork: topo.networkName, sidecarName: topo.sidecarName, sidecarPort: 3128, name: `${topo.sidecarName}-bad`,
-        }).catch((x: unknown) => x);
+          engine: e, settings: s, network: open, scanNetwork: topo.networkName, sidecarName: topo.sidecarName, sidecarPort: 3128, name: `${topo.sidecarName}-bad`,
+        }).catch((x: unknown) => x).finally(() => e.run(["network", "rm", open]));
         assert.ok(err instanceof ProxyTopologyError && err.code === "selftest-failed", String(err));
         const failed = err.details.join("\n");
         assert.match(failed, /noDefaultRoute/);
