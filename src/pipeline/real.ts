@@ -1,5 +1,6 @@
 import { fetchChangelog } from "../changelog/index.js";
 import type { Config } from "../config.js";
+import type { RegistryProxyInfo } from "../report/index.js";
 import { withSandbox, type ResolvedIsolation } from "../sandbox/index.js";
 import type { SandboxProxy } from "../sandbox/proxy-client.js";
 import { managerByName, installAndTest, type PackageManager, type TestOutcome } from "../testrun/index.js";
@@ -22,6 +23,8 @@ export interface RealDepsOptions {
   isolation?: ResolvedIsolation;
   /** Registry proxy of this run (container isolation only): every sandbox joins its network and talks to registries through it. */
   proxy?: SandboxProxy;
+  /** Report snapshot of the proxy's activity (see `withRegistryProxy`). */
+  registryProxyInfo?: () => RegistryProxyInfo;
 }
 
 /** The old workspace manifests belong to the old lockfile only: applying them to the new lockfile's install would test the wrong state. */
@@ -58,5 +61,6 @@ export function realDeps(options: RealDepsOptions): PipelineDeps {
     fetchChangelog: (request) => fetchChangelog({ ...request, githubToken: options.githubToken }),
     scanUsage: (packageName) => scanUsage(projectDir, packageName),
     isolation: options.isolation?.info ?? { level: "temp-dir" },
+    registryProxy: options.registryProxyInfo,
   };
 }

@@ -7,6 +7,9 @@ import { renderMarkdown } from "../ci/comment.js";
 import { loadConfig } from "../config.js";
 import { runPipeline, type PipelineDeps } from "../pipeline/index.js";
 import { realDeps } from "../pipeline/real.js";
+import type { SandboxProxy } from "../sandbox/proxy-client.js";
+import type { RegistryProxyInfo } from "../report/index.js";
+import { withRegistryProxy } from "../pipeline/registry-proxy.js";
 import { resolveIsolation, type ResolvedIsolation } from "../sandbox/index.js";
 import { renderJson, renderSarif, renderText, type Report } from "../report/index.js";
 import { parseCliArgs, USAGE, type OutputFormat } from "./args.js";
@@ -29,6 +32,9 @@ export interface DepsFactoryOptions {
   oldPackageJson?: string;
   oldFiles?: Record<string, string | null>;
   isolation: ResolvedIsolation;
+  /** Set when `registryAuth` is on: the sandboxes talk to registries through this proxy. */
+  proxy?: SandboxProxy;
+  registryProxyInfo?: () => RegistryProxyInfo;
 }
 
 export type DepsFactory = (options: DepsFactoryOptions) => PipelineDeps;
@@ -69,9 +75,15 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
     const isolation = await resolveIsolation({ mode: config.isolation, runtime: config.containerRuntime, image: config.containerImage, network: config.containerNetwork });
     for (const note of isolation.notes) io.err(`ratchet: ${note}`);
 
-    const deps = (makeDeps ?? defaultDeps(config, io.env))({ projectDir, oldLockfile, manager: manager.name, oldPackageJson, oldFiles, isolation });
     if (workspaces.length > 0) io.err(`ratchet: workspace project (${workspaces.length} packages); tests run via the root scripts.test only`);
-    const report = await runPipeline({ oldLockfile, newLockfile, manifest, workspaces, oldPackageJson, config }, deps);
+    const manifestNames = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"].flatMap((k) => Object.keys((manifest[k] as Record<string, string> | undefined) ?? {}));
+    const report = await withRegistryProxy(
+      { config, isolation, projectDir, env: io.env, lockfiles: [oldLockfile, newLockfile], manifestNames, log: (line) => io.err(`ratchet: ${line}`) },
+      (run) => {
+        const deps = (makeDeps ?? defaultDeps(config, io.env))({ projectDir, oldLockfile, manager: manager.name, oldPackageJson, oldFiles, isolation, proxy: run?.proxy, registryProxyInfo: run?.info });
+        return runPipeline({ oldLockfile, newLockfile, manifest, workspaces, oldPackageJson, config }, deps);
+      },
+    );
 
     io.out(render(report, args.format));
     if (args.reportDir) await writeReports(resolve(args.reportDir), report);

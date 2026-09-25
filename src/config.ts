@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { isIP } from "node:net";
 import { join } from "node:path";
 import type { VerdictStatus } from "./report/index.js";
 
@@ -23,6 +24,10 @@ export interface Config {
   registryAllowlist: boolean;
   /** With registryAuth: extra `host[:port]` the proxy may tunnel to (CDN, binary downloads); port defaults to 443. */
   registryAllowHosts: string[];
+  /** With registryAuth: resolver IPs the proxy uses for registry host names (it never uses the system resolver); set your corporate DNS for internal registries. */
+  registryDns: string[];
+  /** With registryAuth: extra CA bundle (PEM file) the proxy trusts for registries with a corporate certificate. */
+  registryCaFile?: string;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -36,6 +41,7 @@ export const DEFAULT_CONFIG: Config = {
   registryAuth: false,
   registryAllowlist: true,
   registryAllowHosts: [],
+  registryDns: ["1.1.1.1", "9.9.9.9"],
 };
 
 export const CONFIG_FILE = ".ratchetrc";
@@ -53,7 +59,7 @@ export async function loadConfig(projectDir: string): Promise<Config> {
 
 export function parseConfig(text: string): Config {
   const raw = JSON.parse(text) as Record<string, unknown>;
-  const unknown = Object.keys(raw).filter((key) => !(key in DEFAULT_CONFIG) && key !== "containerImage");
+  const unknown = Object.keys(raw).filter((key) => !(key in DEFAULT_CONFIG) && key !== "containerImage" && key !== "registryCaFile");
   if (unknown.length > 0) throw new Error(`${CONFIG_FILE}: unknown option(s): ${unknown.join(", ")}`);
 
   const config = { ...DEFAULT_CONFIG, ...raw } as Config;
@@ -82,6 +88,12 @@ export function parseConfig(text: string): Config {
   if (typeof config.registryAllowlist !== "boolean") throw new Error(`${CONFIG_FILE}: "registryAllowlist" must be true or false`);
   if (!Array.isArray(config.registryAllowHosts) || config.registryAllowHosts.some((h) => typeof h !== "string" || !/^[A-Za-z0-9.-]+(:\d{1,5})?$/.test(h))) {
     throw new Error(`${CONFIG_FILE}: "registryAllowHosts" must be an array of "host" or "host:port" strings`);
+  }
+  if (!Array.isArray(config.registryDns) || config.registryDns.length === 0 || config.registryDns.some((d) => typeof d !== "string" || isIP(d) === 0)) {
+    throw new Error(`${CONFIG_FILE}: "registryDns" must be a non-empty array of IP addresses`);
+  }
+  if (config.registryCaFile !== undefined && (typeof config.registryCaFile !== "string" || config.registryCaFile === "")) {
+    throw new Error(`${CONFIG_FILE}: "registryCaFile" must be a path`);
   }
   if (config.containerImage !== undefined && (typeof config.containerImage !== "string" || config.containerImage === "")) {
     throw new Error(`${CONFIG_FILE}: "containerImage" must be a non-empty image name`);
