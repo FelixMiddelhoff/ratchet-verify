@@ -19,6 +19,10 @@ uses. Two flavours:
   - a source file could not be parsed, so the usage scan is incomplete
   - your code uses the whole module or its default export, so listed breaking
     changes cannot be ruled out
+  - this version newly runs an install script (or a new dependency has one):
+    tests cannot show what it does outside the sandbox. npm and pnpm
+    lockfiles record this; yarn's do not. A dependency that already ran one
+    only gets the note "runs an install script (as the old version did)".
 
   Treat "partial" as "the tests were the only real evidence". The overall
   headline says `safe (partial)` too, never a bare `safe`.
@@ -35,6 +39,11 @@ uses. Two flavours:
   - Matching is by identifier, so common words (`option`, `parse`) can match
     an unrelated breaking note: false positives cost a minute of review, a
     missed break costs an incident, and ratchet prefers the former.
+- With the [registry proxy](private-registries.md) on, the proxy refused
+  requests that no normal install makes (a tunnel to an unlisted host, a
+  package nobody declared, a write method). The overall verdict is then at
+  least risky, and the report says `SUSPICIOUS install activity` with the
+  counts. It can only see attempts made through the proxy.
 - **unverified** (also reported as risky) — nothing ran against this bump:
   no `scripts.test`, no lockfile, the suite already fails on the old lockfile,
   or a *different* dependency reproduces the failure and this one was not

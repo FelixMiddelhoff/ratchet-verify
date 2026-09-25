@@ -305,5 +305,8 @@ strips credentials from that environment and redirects the home directory
 In CI, prefer `isolation: container` (docker or podman, present on GitHub-hosted
 Ubuntu runners): the install and the tests then see only the sandbox directory.
 Either way, run on ephemeral runners rather than machines holding long-lived
-secrets. Details in the [README](../README.md#safety-of-the-install-step) and
+secrets. For private registries use the opt-in registry proxy
+(`registryAuth`, see [private-registries.md](private-registries.md)) and keep
+`--base`: with it the registry settings come from the base branch, so a pull
+request cannot redirect your registry token. Details in the [README](../README.md#safety-of-the-install-step) and
 [configuration.md](configuration.md#isolation).

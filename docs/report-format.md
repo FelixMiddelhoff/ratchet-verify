@@ -44,6 +44,7 @@ added within a version; existing ones aren't removed or changed.
 |---|---|
 | `overall` | `"safe"`, `"risky"` or `"broken"`: the worst verdict below. `verdicts` is empty (and `overall` is `"safe"`) when no dependency changed. |
 | `isolation` | How installs and tests were isolated: `{ "level": "temp-dir" }` or `{ "level": "container", "runtime": "docker", "image": "node:24" }`. Absent only for reports built without running anything. |
+| `registryProxy` | Present only when the run used the [registry proxy](private-registries.md): `registries` (`id`, `host`, `credential` kind `bearer`/`basic`/`none`, `scopes`), `allowlist` (`"on"`/`"off"`), `allowHosts`, `allowedPackages` (count), `discoveredPackages`, `requestsAllowed`, `requestsDenied`, `suspicious` (refused requests no normal install makes: `class`, `reason`, `name`, `count`; when non-empty `overall` is at least `"risky"`) and `auditTruncated`. Never contains a credential. |
 | `status` | `"safe"`, `"risky"`, `"broken"` |
 | `confidence` | `"full"`, or `"reduced"` when a signal was missing. `status: "safe"` with `confidence: "reduced"` is the "safe (partial)" verdict. Don't treat it as an all-clear. |
 | `oldVersion` / `newVersion` | Absent for a dependency that was added / removed. |
@@ -117,7 +118,7 @@ Fully evaluated `safe` verdicts produce no result. Example result:
 ## Markdown (`--markdown`)
 
 The pull request comment: a summary table, with a collapsible section per
-verdict that needs explaining, and a footer line stating the isolation level. It begins with the marker
+verdict that needs explaining, and footer lines stating the isolation level (and, with the registry proxy, what it did). It begins with the marker
 `<!-- ratchet-verdict -->`, which is how the GitHub Action finds its own comment
 to update instead of posting a new one. Output is kept below GitHub's comment
 size limit. See [tutorial.md](tutorial.md#6-machine-readable-output) for a
