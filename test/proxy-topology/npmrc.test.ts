@@ -98,3 +98,32 @@ describe("rewriteYarnrcBerry", () => {
     assert.equal(out.text, `npmRegistryServer: "${PROXY}/"\nunsafeHttpWhitelist:\n  - "ratchet-proxy-1a2b3c4d"\nenableTelemetry: false\n`);
   });
 });
+
+import { PUBLIC_REGISTRY_ALIASES, rewriteLockfileUrls } from "../../src/sandbox/proxy-topology/index.js";
+
+describe("rewriteLockfileUrls", () => {
+  const maps = [
+    ...PUBLIC_REGISTRY_ALIASES.map((from) => ({ from, to: `${PROXY}/` })),
+    { from: "https://npm.corp.example/api/npm/repo", to: `${PROXY}/_r/corp` },
+  ];
+  test("yarn classic resolved, pnpm tarball and berry archiveUrl all move to the proxy; hashes stay", () => {
+    const lock = [
+      `  resolved "https://registry.yarnpkg.com/left-pad/-/left-pad-1.3.0.tgz#5b8a3a7765dfe001261dde915589e782f8c94d1e"`,
+      "  integrity sha512-XI5MPzVNApjAyhQzphX8BkmKsKUxD4LdyK24iZeQGinBN9yTQT3bFlCBy/aVx2HrNcqQGsdot8ghrjyrvMCoEA==",
+      `      tarball: https://registry.npmjs.org/x/-/x-1.0.0.tgz`,
+      `  resolution: "a@npm:1.0.0::__archiveUrl=${encodeURIComponent("https://npm.corp.example/api/npm/repo/a/-/a-1.0.0.tgz")}"`,
+    ].join("\n");
+    const out = rewriteLockfileUrls(lock, maps);
+    assert.equal(out.replaced, 3);
+    assert.ok(out.text.includes(`resolved "${PROXY}/left-pad/-/left-pad-1.3.0.tgz#5b8a3a7765dfe001261dde915589e782f8c94d1e"`));
+    assert.ok(out.text.includes(`tarball: ${PROXY}/x/-/x-1.0.0.tgz`));
+    assert.ok(out.text.includes(encodeURIComponent(`${PROXY}/_r/corp/a/-/a-1.0.0.tgz`)));
+    assert.ok(out.text.includes("integrity sha512-XI5MPzVNApjAyhQzphX8BkmKsKUxD4LdyK24iZeQGinBN9yTQT3bFlCBy/aVx2HrNcqQGsdot8ghrjyrvMCoEA=="));
+    assert.ok(!out.text.includes("registry.yarnpkg.com") && !out.text.includes("npm.corp.example"));
+  });
+
+  test("unrelated hosts are left alone", () => {
+    const lock = `  resolved "https://evil.example/registry.npmjs.org/x.tgz"`;
+    assert.equal(rewriteLockfileUrls(lock, maps).replaced, 0);
+  });
+});
