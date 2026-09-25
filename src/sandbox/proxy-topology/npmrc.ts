@@ -50,5 +50,6 @@ export function rewriteNpmrc(projectNpmrc: string | undefined, proxyUrl: string,
   if (defaults.length !== 1) throw new Error(`exactly one default registry is required, got ${defaults.length}`);
   const own = [`registry=${proxyRegistryUrl(proxyUrl, defaults[0]!)}`, "replace-registry-host=always", "audit=false", "fund=false"];
   for (const r of registries) for (const scope of r.scopes ?? []) own.push(`${scope}:registry=${proxyRegistryUrl(proxyUrl, r)}`);
-  return { text: `${kept.join("\n").replace(/\n+$/, "")}${kept.length > 0 ? "\n" : ""}${own.join("\n")}\n`, dropped };
+  const body = kept.join("\n").trim();
+  return { text: `${body === "" ? "" : `${body}\n`}${own.join("\n")}\n`, dropped };
 }
