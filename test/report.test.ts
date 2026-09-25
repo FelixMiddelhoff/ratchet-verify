@@ -292,3 +292,19 @@ test("registry proxy disclosure: text footer, markdown footer, JSON field; no cr
   assert.equal(buildReport([], { level: "temp-dir" }).registryProxy, undefined);
   assert.ok(!("registryProxy" in buildReport([], { level: "temp-dir" })));
 });
+
+test("install script: newly added downgrades safe to partial with a caveat; an existing one is only a note; removed says nothing", () => {
+  const withScript = (old: boolean, next: boolean, kind: "changed" | "added" | "removed" = "changed") =>
+    judge(assessment({ change: { name: "lib", path: "node_modules/lib", kind, oldVersion: kind === "added" ? undefined : "1.0.0", newVersion: kind === "removed" ? undefined : "1.5.0", direct: true, installScript: { old, new: next } } }));
+  const fresh = withScript(false, true);
+  assert.equal(fresh.status, "safe");
+  assert.equal(fresh.confidence, "reduced");
+  assert.ok(fresh.caveats.some((c) => /newly runs an install script/.test(c)));
+  assert.ok(fresh.notes.includes("runs an install script"));
+  const same = withScript(true, true);
+  assert.equal(same.confidence, "full");
+  assert.deepEqual(same.notes.filter((n) => /install script/.test(n)), ["runs an install script (as the old version did)"]);
+  assert.ok(withScript(false, true, "added").caveats.some((c) => /new dependency that runs an install script/.test(c)));
+  assert.deepEqual(withScript(true, false).notes.filter((n) => /install script/.test(n)), []);
+  assert.deepEqual(withScript(true, true, "removed").notes.filter((n) => /install script/.test(n)), []);
+});

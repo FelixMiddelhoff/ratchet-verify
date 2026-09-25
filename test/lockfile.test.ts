@@ -122,3 +122,12 @@ test("v1 to v3 migration of an unchanged tree yields no changes", () => {
 test("unsupported lockfile shape throws", () => {
   assert.throws(() => parseLockfile("{}"), /Unsupported lockfile/);
 });
+
+test("install scripts: npm hasInstallScript is read; a bump that newly adds one is reported on the change", () => {
+  const lock = (v: string, script: boolean) =>
+    JSON.stringify({ lockfileVersion: 3, packages: { "": {}, "node_modules/a": { version: v, ...(script ? { hasInstallScript: true } : {}) }, "node_modules/b": { version: "1.0.0", hasInstallScript: true } } });
+  const changes = diffLockfileTexts(lock("1.0.0", false), lock("1.1.0", true), { dependencies: { a: "^1", b: "^1" } });
+  assert.deepEqual(changes.map((c) => [c.name, c.installScript]), [["a", { old: false, new: true }]]);
+  assert.equal(parseLockfile(lock("1.0.0", true)).get("node_modules/b")?.installScript, true);
+  assert.equal(parseLockfile(lock("1.0.0", false)).get("node_modules/a")?.installScript, undefined);
+});

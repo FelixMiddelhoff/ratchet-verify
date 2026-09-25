@@ -41,7 +41,7 @@ export function judge(a: DependencyAssessment): DependencyVerdict {
     direct: a.change.direct,
     ...(a.workspaces ? { workspaces: a.workspaces } : {}),
     caveats: [] as string[],
-    notes: [] as string[],
+    notes: installScriptNotes(a),
   };
 
   const test = a.test;
@@ -177,9 +177,20 @@ function gatherGaps(a: DependencyAssessment, base: PartialBase): { caveats: stri
   if (a.change.direct && a.usage.sites.length === 0 && !isRemoved) {
     notes.push("no import sites found in source; the package may be used through config or the CLI");
   }
+  const script = a.change.installScript;
+  if (script?.new && !script.old && !isRemoved) {
+    caveats.push(isNew ? "new dependency that runs an install script: tests cannot show what it does outside the sandbox" : "this version newly runs an install script (the old version had none): tests cannot show what it does outside the sandbox");
+  }
   if (isNew) notes.push("new dependency: no earlier version to compare against");
   notes.push(...a.changelog.notes);
   return { caveats, notes };
+}
+
+/** Install scripts run with the user's privileges on every machine that installs the package: always worth a line. */
+function installScriptNotes(a: DependencyAssessment): string[] {
+  const script = a.change.installScript;
+  if (a.change.kind === "removed" || !script?.new) return [];
+  return [script.old ? "runs an install script (as the old version did)" : "runs an install script"];
 }
 
 function tail(output: string): string {

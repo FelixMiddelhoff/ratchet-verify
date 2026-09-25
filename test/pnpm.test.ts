@@ -280,3 +280,10 @@ test("sandbox env (temp-dir and container): pnpm store, cache, config and corepa
   assert.equal(host.NPM_TOKEN, undefined);
   assert.ok(!Object.values(host).some((v) => v.includes("/home/real") || v.includes("/real/store")));
 });
+
+test("install scripts: pnpm requiresBuild is read", () => {
+  const lock = (v: string, build: boolean) =>
+    ["lockfileVersion: '9.0'", "", "importers:", "  .:", "    dependencies:", "      esbuild:", "        specifier: ^0.19.0", `        version: ${v}`, "", "packages:", "", `  esbuild@${v}:`, "    resolution: {integrity: sha512-AAAA}", ...(build ? ["    requiresBuild: true"] : []), "", "snapshots:", "", `  esbuild@${v}: {}`, ""].join("\n");
+  const changes = diffLockfileTexts(lock("0.19.0", false), lock("0.19.1", true), { dependencies: { esbuild: "^0.19.0" } });
+  assert.deepEqual(changes.map((c) => c.installScript), [{ old: false, new: true }]);
+});
