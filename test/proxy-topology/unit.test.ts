@@ -6,6 +6,8 @@ import {
   buildProxyConfig, cidrOverlap, decideSweep, judgeSelfTest, labelArgs, makeLabels, parseCidr, parseInventory, pickSubnet, ProxyTopologyError,
   sweepStale, withInternalSubnet, withProxyTopology, type ProxyConfigInput, type TopologyOptions,
 } from "../../src/sandbox/proxy-topology/index.js";
+import { MAX_LIFETIME_MS } from "../../src/sandbox/registry-proxy/sidecar.js";
+import { MAX_AGE_SECONDS } from "../../src/sandbox/proxy-topology/sweep.js";
 import { sidecarCreateArgs } from "../../src/sandbox/proxy-topology/commands.js";
 import { FakeEngine, type FakeBehavior } from "./fake-engine.js";
 
@@ -497,5 +499,11 @@ describe("sandbox network argument", () => {
     const args = (network: string) => buildRunArgs({ settings, root: "/r", name: "n", command: "true", args: [], user: "1:1", network });
     assert.ok(args("ratchet-net-aabbccdd").includes("ratchet-net-aabbccdd"));
     for (const bad of ["host", "HOST", "none", "bridge", "container:abc", "--privileged", "-x", "a b", "", "net,x"]) assert.throws(() => args(bad), /refusing network/, bad);
+  });
+});
+
+describe("sidecar lifetime", () => {
+  test("the sidecar's own limit is shorter than the stale-sweep age", () => {
+    assert.ok(MAX_LIFETIME_MS > 0 && MAX_LIFETIME_MS / 1000 < MAX_AGE_SECONDS);
   });
 });
