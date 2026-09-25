@@ -6,3 +6,4 @@ export * from "./selftest.js";
 export * from "./subnet.js";
 export * from "./sweep.js";
 export * from "./topology.js";
+export * from "./npmrc.js";
