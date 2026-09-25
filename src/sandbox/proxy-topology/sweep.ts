@@ -6,6 +6,8 @@ export const LABEL_OWNER = "ratchet.owner";
 export const LABEL_STARTED = "ratchet.started";
 /** Resources older than this are swept even when their owner pid looks alive (pid reuse, hung runs). */
 export const MAX_AGE_SECONDS = 12 * 60 * 60;
+/** Resources younger than this are never swept: a run that just started (or a pid namespace we cannot see into) is not provably dead. */
+export const MIN_AGE_SECONDS = 10 * 60;
 
 export interface RunLabels {
   run: string;
@@ -36,6 +38,7 @@ export type SweepDecision = { sweep: true; reason: "dead-owner" | "too-old" } | 
 /**
  * The decision table (never touches a concurrent live run):
  *  - too old (> 12 h)                          -> sweep
+ *  - younger than 10 min                       -> keep
  *  - same host, owner pid dead                 -> sweep
  *  - same host, owner pid alive                -> keep
  *  - other host, younger than 12 h             -> keep (its pid means nothing here)
@@ -44,6 +47,7 @@ export type SweepDecision = { sweep: true; reason: "dead-owner" | "too-old" } | 
 export function decideSweep(owner: string | undefined, started: number | undefined, ctx: SweepContext): SweepDecision {
   const maxAge = ctx.maxAgeSeconds ?? MAX_AGE_SECONDS;
   if (started !== undefined && Number.isFinite(started) && ctx.nowSeconds - started > maxAge) return { sweep: true, reason: "too-old" };
+  if (started !== undefined && Number.isFinite(started) && ctx.nowSeconds - started < MIN_AGE_SECONDS) return { sweep: false, reason: "young" };
   const colon = owner?.lastIndexOf(":") ?? -1;
   if (owner === undefined || colon < 1) return { sweep: false, reason: "unreadable" };
   const host = owner.slice(0, colon);

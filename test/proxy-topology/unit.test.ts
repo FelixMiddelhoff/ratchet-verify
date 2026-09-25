@@ -354,15 +354,16 @@ describe("stale sweep decision table", () => {
   const young = 1_000_000 - 60;
   const old = 1_000_000 - 13 * 3600;
   test("table", () => {
-    assert.deepEqual(decideSweep("ci-1:100", young, ctx([100])), { sweep: false, reason: "live-owner" });
-    assert.deepEqual(decideSweep("ci-1:100", young, ctx([])), { sweep: true, reason: "dead-owner" });
+    assert.deepEqual(decideSweep("ci-1:100", 1_000_000 - 700, ctx([100])), { sweep: false, reason: "live-owner" });
+    assert.deepEqual(decideSweep("ci-1:100", young, ctx([])), { sweep: false, reason: "young" });
+    assert.deepEqual(decideSweep("ci-1:100", 1_000_000 - 700, ctx([])), { sweep: true, reason: "dead-owner" });
     assert.deepEqual(decideSweep("other:100", young, ctx([])), { sweep: false, reason: "other-host" });
     assert.deepEqual(decideSweep("other:100", old, ctx([])), { sweep: true, reason: "too-old" });
     assert.deepEqual(decideSweep("ci-1:100", old, ctx([100])), { sweep: true, reason: "too-old" });
     assert.deepEqual(decideSweep("ci-1:100", 1_000_000 - 11 * 3600, ctx([100])), { sweep: false, reason: "live-owner" });
-    assert.deepEqual(decideSweep(undefined, young, ctx([])), { sweep: false, reason: "unreadable" });
-    assert.deepEqual(decideSweep("nocolon", young, ctx([])), { sweep: false, reason: "unreadable" });
-    assert.deepEqual(decideSweep("ci-1:abc", young, ctx([])), { sweep: false, reason: "unreadable" });
+    assert.deepEqual(decideSweep(undefined, 1_000_000 - 700, ctx([])), { sweep: false, reason: "unreadable" });
+    assert.deepEqual(decideSweep("nocolon", 1_000_000 - 700, ctx([])), { sweep: false, reason: "unreadable" });
+    assert.deepEqual(decideSweep("ci-1:abc", 1_000_000 - 700, ctx([])), { sweep: false, reason: "unreadable" });
     assert.deepEqual(decideSweep("ci-1:100", undefined, ctx([])), { sweep: true, reason: "dead-owner" });
   });
 
@@ -379,8 +380,8 @@ describe("stale sweep decision table", () => {
         if (a[0] === "ps" && a.includes("-q")) return okResult("c-dead\nc-live");
         if (a[0] === "ps") return okResult(a.some((x) => x === "network=n-dead") ? "sandbox-orphan" : "");
         if (a[0] === "network" && a[1] === "ls") return okResult("n-dead\nn-live");
-        if (a[0] === "inspect") return okResult(JSON.stringify([rec("container", "c-dead", lab(DEAD, "ci-1:111", "999900")), rec("container", "c-live", lab(LIVE, "ci-1:222", "999900"))]));
-        if (a[0] === "network" && a[1] === "inspect") return okResult(JSON.stringify([rec("network", "n-dead", lab(DEAD, "ci-1:111", "999900")), rec("network", "n-live", lab(LIVE, "ci-1:222", "999900"))]));
+        if (a[0] === "inspect") return okResult(JSON.stringify([rec("container", "c-dead", lab(DEAD, "ci-1:111", "999000")), rec("container", "c-live", lab(LIVE, "ci-1:222", "999000"))]));
+        if (a[0] === "network" && a[1] === "inspect") return okResult(JSON.stringify([rec("network", "n-dead", lab(DEAD, "ci-1:111", "999000")), rec("network", "n-live", lab(LIVE, "ci-1:222", "999000"))]));
         if (a[0] === "rm" || (a[0] === "network" && a[1] === "rm")) return okResult("");
         return undefined;
       },
