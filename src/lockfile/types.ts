@@ -3,6 +3,8 @@ export interface InstalledPackage {
   version: string;
   /** Names the root manifest may use for this package (yarn/npm `alias@npm:real`). */
   aliases?: string[];
+  /** The package declares an install script (npm `hasInstallScript`, pnpm `requiresBuild`). Not recorded by yarn lockfiles: absent means unknown there. */
+  installScript?: boolean;
   /** pnpm: importer directories (`.` = root) whose manifest resolves the name to this exact copy. */
   importers?: string[];
 }
@@ -18,6 +20,8 @@ export interface DependencyChange {
   kind: ChangeKind;
   oldVersion?: string;
   newVersion?: string;
+  /** Install script of the old and new version, when the lockfile records it (npm, pnpm). */
+  installScript?: { old: boolean; new: boolean };
   direct: boolean;
   /** Workspaces (package names, `(root)` for the root manifest) whose manifest names this dependency; set only for workspace projects. */
   declaredIn?: string[];

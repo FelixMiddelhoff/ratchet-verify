@@ -50,6 +50,19 @@ test("config: defaults, overrides, and strict validation", () => {
   assert.throws(() => parseConfig('{"ignore":"x"}'), /ignore/);
 });
 
+test("registry proxy options: off by default, strictly validated, flags", () => {
+  const d = parseConfig("{}");
+  assert.deepEqual([d.registryAuth, d.registryAllowlist, d.registryAllowHosts], [false, true, []]);
+  assert.equal(parseConfig('{"registryAuth":true,"registryAllowHosts":["cdn.example.com","s3.example.com:8443"]}').registryAuth, true);
+  assert.throws(() => parseConfig('{"registryAuth":"yes"}'), /registryAuth/);
+  assert.throws(() => parseConfig('{"registryAllowlist":0}'), /registryAllowlist/);
+  assert.throws(() => parseConfig('{"registryAllowHosts":["https://x"]}'), /registryAllowHosts/);
+  assert.equal(parseCliArgs(["--base", "x", "--registry-auth"]).registryAuth, true);
+  assert.equal(parseCliArgs(["--base", "x"]).registryAuth, undefined);
+  assert.equal(parseCliArgs(["--base", "x", "--registry-auth", "--no-registry-allowlist"]).registryAllowlistOff, true);
+  assert.throws(() => parseCliArgs(["--base", "x", "--no-registry-allowlist"]), /registry-auth/);
+});
+
 test("--help prints usage and exits 0", async () => {
   const { io, out } = capture();
   assert.equal(await runCli(["--help"], io), 0);

@@ -1,6 +1,6 @@
 {
   "name": "ratchet-verify",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Verify a dependency bump before you merge it: real tests, changelog breaking changes vs. actual usage, bisection to the breaking version.",
   "license": "MIT",
   "repository": {

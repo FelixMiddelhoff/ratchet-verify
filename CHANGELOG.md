@@ -5,6 +5,19 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-25
+
+### Added
+- Action: `registry-auth` input (needs `isolation: container`).
+- Private registries (#9, opt-in, container isolation only): `--registry-auth` / `registryAuth`. A credential-holding registry proxy runs in its own container; the sandbox joins a run-scoped internal network whose only reachable peer is the proxy, so install scripts get no token, no internet and no direct route to the registry. Registries and credentials are read from the project and user `.npmrc` (`_authToken`, `_auth`, `username`+`_password`, `${VAR}` expansion; an unset variable is an error). The sandbox's `.npmrc`, `.yarnrc` and `.yarnrc.yml` are rewritten to the proxy (registry, auth and network settings removed) and lockfile tarball URLs are pointed at it in the sandbox copy. The proxy serves only GET/HEAD for package metadata and tarballs, only names from the lockfiles (plus declared dependencies, reported as discovered), attaches the token only to the configured origin, refuses private/metadata addresses unless `registryPrivateHosts` names the host, and redacts tokens everywhere. An isolation self-test runs before any candidate code; if any protection cannot be set up or teardown cannot be verified, the run fails instead of running unprotected. New options `registryAuth`, `registryAllowlist` (`--no-registry-allowlist`, reported), `registryAllowHosts`, `registryDns`, `registryPrivateHosts`, `registryCaFile`. Verified on real podman and Docker CI with npm and yarn classic against a token-checking https fixture registry, including a malicious `preinstall` that finds nothing. yarn berry and pnpm are wired but not run against a real registry; mTLS is not supported. See `docs/private-registries.md`.
+- Reports state what the proxy did: JSON `registryProxy` (registries, credential kind, allowlist on/off, allow hosts, discovered packages, allowed/denied counts, `suspicious`, `auditTruncated`), a text line and a Markdown footer line. Never a credential.
+- Suspicious install activity: refused proxy requests that no normal install makes (a tunnel to an unlisted host, a package nobody declared, a write method) raise a plainly safe run to `risky` and are listed with counts ("SUSPICIOUS install activity"). Only attempts made through the proxy are visible; direct network attempts are dropped silently by the internal network.
+- Install scripts: the npm (`hasInstallScript`) and pnpm (`requiresBuild`) lockfile flags are read. A dependency that runs an install script gets the note "runs an install script"; one that newly adds it (or a new dependency that has it) gets a caveat, so a passing verdict is `safe (partial)`. yarn lockfiles do not record this.
+
+### Security
+- With `--base`, all `registry*` settings and the project `.npmrc` are read from the base ref, never from the checkout under test. Before, a hostile pull request could have edited `.npmrc`/`.ratchetrc` (registry URL with `_authToken=${NPM_TOKEN}`, `registryDns`, `registryCaFile`, `registryPrivateHosts`) to make the proxy send your token to its own server. Differing working-tree values are ignored with a note (setting names only); a relative `registryCaFile` is refused with `--base`; without `--base` a warning says to use it in CI. (This shipped only in the unreleased proxy work, never in a published version.)
+- `buildRunArgs` rejects option-like and engine-mode network names (`host`, `none`, `bridge`, `--x`).
+
 ## [0.5.0] - 2026-09-24
 
 ### Added

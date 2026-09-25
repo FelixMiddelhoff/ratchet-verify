@@ -24,6 +24,7 @@ export function diffLockfiles(
       kind: previous ? "changed" : "added",
       oldVersion: previous?.version,
       newVersion: next.version,
+      ...scriptInfo(previous, next),
       ...attribute(path, next, declarers, workspaces),
     });
   }
@@ -102,4 +103,10 @@ function narrowToImporters(labels: Set<string>, importers: string[] | undefined,
   const wanted = new Set(importers.map((i) => (i === "." ? ROOT_LABEL : workspaces.find((w) => w.dir === i) ? workspaceLabel(workspaces.find((w) => w.dir === i)!) : i)));
   const narrowed = new Set([...labels].filter((l) => wanted.has(l)));
   return narrowed.size > 0 ? narrowed : labels;
+}
+
+/** Only when the lockfile can tell (some entry has the flag, so the format records it) or a side has it. */
+function scriptInfo(previous: InstalledPackage | undefined, next: InstalledPackage): { installScript?: { old: boolean; new: boolean } } {
+  const flags = { old: previous?.installScript === true, new: next.installScript === true };
+  return flags.old || flags.new ? { installScript: flags } : {};
 }

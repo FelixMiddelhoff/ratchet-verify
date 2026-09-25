@@ -34,6 +34,7 @@ push, and fails the check according to `fail-on`.
 | `project-dir` | `.` | Directory with `package.json` and `package-lock.json` |
 | `fail-on` | `broken` | `broken` or `risky` |
 | `comment` | `true` | Post and update the verdict comment |
+| `registry-auth` | `false` | Private registries through the credential-holding proxy (needs `isolation: container`, ratchet-verify 0.6.0+). Token via the step's `env`; registry settings come from the base branch. See [private-registries.md](private-registries.md). |
 | `sarif` | `false` | Upload results to code scanning (needs `security-events: write`) |
 | `isolation` | `temp-dir` | `temp-dir`, `container` or `auto`. GitHub-hosted Ubuntu runners have docker, so `container` works out of the box (the image is pulled on the first run) |
 | `ratchet-version` | `latest` | Version or tag of `ratchet-verify` to run |
@@ -305,5 +306,8 @@ strips credentials from that environment and redirects the home directory
 In CI, prefer `isolation: container` (docker or podman, present on GitHub-hosted
 Ubuntu runners): the install and the tests then see only the sandbox directory.
 Either way, run on ephemeral runners rather than machines holding long-lived
-secrets. Details in the [README](../README.md#safety-of-the-install-step) and
+secrets. For private registries use the opt-in registry proxy
+(`registryAuth`, see [private-registries.md](private-registries.md)) and keep
+`--base`: with it the registry settings come from the base branch, so a pull
+request cannot redirect your registry token. Details in the [README](../README.md#safety-of-the-install-step) and
 [configuration.md](configuration.md#isolation).

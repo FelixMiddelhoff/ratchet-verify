@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Registry proxy sidecar entrypoint. NOT wired into any CLI flag, config or pipeline yet.
 // Usage: printf '<json config+credentials>' | node main.js
-import { runSidecar } from "./sidecar.js";
+import { MAX_LIFETIME_MS, runSidecar } from "./sidecar.js";
 import { createBoundedSink, installCrashHandlers } from "./sink.js";
 import type { Redactor } from "./secret.js";
 
@@ -40,4 +40,8 @@ if (!result.ok) {
   };
   process.on("SIGTERM", stop);
   process.on("SIGINT", stop);
+  setTimeout(() => {
+    stderrLine("maximum lifetime reached, stopping");
+    stop();
+  }, MAX_LIFETIME_MS).unref();
 }

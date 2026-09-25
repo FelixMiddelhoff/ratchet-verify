@@ -5,7 +5,7 @@ import type { IsolationInfo } from "../sandbox/index.js";
 import type { MatchResult } from "../match/index.js";
 import type { TestOutcome } from "../testrun/index.js";
 import type { UsageScan } from "../usage/index.js";
-import type { DependencyVerdict, Evidence, Report, VerdictStatus } from "./types.js";
+import type { DependencyVerdict, Evidence, RegistryProxyInfo, Report, VerdictStatus } from "./types.js";
 
 export interface DependencyAssessment {
   change: DependencyChange;
@@ -23,10 +23,12 @@ export interface DependencyAssessment {
 const OUTPUT_TAIL_LINES = 40;
 const SEVERITY: VerdictStatus[] = ["safe", "risky", "broken"];
 
-export function buildReport(assessments: DependencyAssessment[], isolation?: IsolationInfo): Report {
+export function buildReport(assessments: DependencyAssessment[], isolation?: IsolationInfo, registryProxy?: RegistryProxyInfo): Report {
   const verdicts = assessments.map(judge);
-  const overall = verdicts.reduce<VerdictStatus>((worst, v) => (SEVERITY.indexOf(v.status) > SEVERITY.indexOf(worst) ? v.status : worst), "safe");
-  return isolation ? { schemaVersion: 1, overall, isolation, verdicts } : { schemaVersion: 1, overall, verdicts };
+  const worst = verdicts.reduce<VerdictStatus>((w, v) => (SEVERITY.indexOf(v.status) > SEVERITY.indexOf(w) ? v.status : w), "safe");
+  // Refused requests during the install phase are evidence of their own: a run that saw them is never plainly safe.
+  const overall: VerdictStatus = worst === "safe" && (registryProxy?.suspicious.length ?? 0) > 0 ? "risky" : worst;
+  return { schemaVersion: 1, overall, ...(isolation ? { isolation } : {}), ...(registryProxy ? { registryProxy } : {}), verdicts };
 }
 
 /**
@@ -41,7 +43,7 @@ export function judge(a: DependencyAssessment): DependencyVerdict {
     direct: a.change.direct,
     ...(a.workspaces ? { workspaces: a.workspaces } : {}),
     caveats: [] as string[],
-    notes: [] as string[],
+    notes: installScriptNotes(a),
   };
 
   const test = a.test;
@@ -177,9 +179,20 @@ function gatherGaps(a: DependencyAssessment, base: PartialBase): { caveats: stri
   if (a.change.direct && a.usage.sites.length === 0 && !isRemoved) {
     notes.push("no import sites found in source; the package may be used through config or the CLI");
   }
+  const script = a.change.installScript;
+  if (script?.new && !script.old && !isRemoved) {
+    caveats.push(isNew ? "new dependency that runs an install script: tests cannot show what it does outside the sandbox" : "this version newly runs an install script (the old version had none): tests cannot show what it does outside the sandbox");
+  }
   if (isNew) notes.push("new dependency: no earlier version to compare against");
   notes.push(...a.changelog.notes);
   return { caveats, notes };
+}
+
+/** Install scripts run with the user's privileges on every machine that installs the package: always worth a line. */
+function installScriptNotes(a: DependencyAssessment): string[] {
+  const script = a.change.installScript;
+  if (a.change.kind === "removed" || !script?.new) return [];
+  return [script.old ? "runs an install script (as the old version did)" : "runs an install script"];
 }
 
 function tail(output: string): string {

@@ -3,6 +3,8 @@ import { createRedactor, redactError, type Redactor } from "./secret.js";
 import { startRegistryProxy, type RegistryProxy } from "./server.js";
 
 export const READY_PREFIX = "RATCHET_PROXY_READY";
+/** A sidecar whose ratchet process vanished (stdin is closed after the config, so there is no EOF signal) stops itself; well below the 12 h sweep age. */
+export const MAX_LIFETIME_MS = 4 * 60 * 60 * 1000;
 const MAX_STDIN_BYTES = 4 * 1024 * 1024;
 
 const SECRET_ENV_NAME = /(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH|API_?KEY|PRIVATE_?KEY|_KEY$)/i;

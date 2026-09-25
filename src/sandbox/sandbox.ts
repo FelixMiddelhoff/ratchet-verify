@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { cp, lstat, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
@@ -5,6 +6,7 @@ import { confinedPath } from "./confine.js";
 import { runInContainer, type ContainerSettings } from "./container.js";
 import { buildSandboxEnv, sandboxPaths } from "./env.js";
 import { runCommand, type RunResult } from "./exec.js";
+import { applyProxyClient, type SandboxProxy } from "./proxy-client.js";
 
 /**
  * "temp-dir" hides credentials via a scrubbed environment and redirected home, but it does
@@ -39,6 +41,8 @@ export interface SandboxOptions {
   sourceEnv?: NodeJS.ProcessEnv;
   /** Run installs and tests in a container instead of directly on the host. */
   container?: ContainerSettings;
+  /** Registry proxy topology (container mode only): installs join its internal network and the project's rc files/lockfile URLs point at the proxy. */
+  proxy?: SandboxProxy;
 }
 
 const NOT_COPIED = new Set(["node_modules", ".git"]);
@@ -57,7 +61,11 @@ export async function withSandbox<T>(options: SandboxOptions, work: (sandbox: Sa
     for (const [file, content] of Object.entries(options.files ?? {})) await applyFile(dir, file, content);
     if (options.lockfile) await writeFile(join(dir, options.lockfile.name), options.lockfile.content);
 
-    return await work(options.container ? containerSandbox(dir, root, options.container) : hostSandbox(dir, paths, options));
+    if (options.proxy) {
+      if (!options.container) throw new Error("the registry proxy needs container isolation: a temp-dir sandbox cannot be confined to it");
+      await applyProxyClient(dir, options.proxy, options.lockfile?.name ?? defaultLockfileName(dir));
+    }
+    return await work(options.container ? containerSandbox(dir, root, options.container, options.proxy) : hostSandbox(dir, paths, options));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -110,6 +118,11 @@ function hostSandbox(dir: string, paths: ReturnType<typeof sandboxPaths>, option
   return { dir, isolation: "temp-dir", run: (command, args, timeoutMs) => runCommand({ command, args, cwd: dir, env, timeoutMs }) };
 }
 
-function containerSandbox(dir: string, root: string, settings: ContainerSettings): Sandbox {
-  return { dir, isolation: "container", run: (command, args, timeoutMs, phase) => runInContainer(settings, root, command, args, timeoutMs, undefined, phase) };
+function containerSandbox(dir: string, root: string, settings: ContainerSettings, proxy?: SandboxProxy): Sandbox {
+  return { dir, isolation: "container", run: (command, args, timeoutMs, phase) => runInContainer(settings, root, command, args, timeoutMs, undefined, { ...phase, network: proxy?.network }) };
+}
+
+const LOCKFILES = ["package-lock.json", "yarn.lock", "pnpm-lock.yaml"];
+function defaultLockfileName(dir: string): string | undefined {
+  return LOCKFILES.find((f) => existsSync(join(dir, f)));
 }

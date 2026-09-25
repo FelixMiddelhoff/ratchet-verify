@@ -1,5 +1,6 @@
 import { isIP } from "node:net";
-import { isIpLiteral, looksNumeric } from "./netguard.js";
+import { parseClientCidr, type ClientCidr } from "./clients.js";
+import { isIpLiteral, looksNumeric, parseV4, parseV6 } from "./netguard.js";
 import { Credential } from "./secret.js";
 
 /** Strict, closed-world validation of the proxy configuration. Errors name paths, never values. */
@@ -98,12 +99,32 @@ export interface ProxyConfig {
   readonly allowPrivateHosts: ReadonlySet<string>;
   /** "audit": dependency names declared by an allowed packument that the client then requests are auto-allowed and recorded. */
   readonly discovery: Discovery;
-  readonly packages: { readonly allow: ReadonlySet<string>; readonly allowPrefixes: readonly string[] };
+  readonly packages: { readonly allow: ReadonlySet<string>; readonly allowPrefixes: readonly string[]; /** Every syntactically valid package name passes (the user switched the allowlist off; still no query strings, no non-package paths). */ readonly allowAll: boolean };
   readonly limits: Readonly<Limits>;
   /** Explicit resolver IPs for upstream names; the sidecar never uses libc. */
   readonly dns: readonly string[];
-  readonly listen: { readonly host: string; readonly port: number };
+  /**
+   * `cidr` (production): bind the one local address inside that IPv4 range, resolved at start (`resolveListenHost`);
+   * never a wildcard, so an interface on another network (the sidecar's egress side) does not answer.
+   */
+  readonly listen: { readonly host: string; readonly cidr?: string; readonly port: number };
+  /** Connections from outside these ranges are destroyed before a byte is parsed (defence in depth for the bind). */
+  readonly allowClients: readonly ClientCidr[];
 }
+
+const isWildcardAddress = (host: string): boolean => {
+  const v4 = parseV4(host);
+  if (v4) return v4.every((b) => b === 0);
+  const v6 = parseV6(host);
+  return v6 !== undefined && v6.every((b) => b === 0);
+};
+
+const isLoopbackAddress = (host: string): boolean => {
+  const v4 = parseV4(host);
+  if (v4) return v4[0] === 127;
+  const v6 = parseV6(host);
+  return v6 !== undefined && v6.slice(0, 15).every((b) => b === 0) && v6[15] === 1;
+};
 
 export const PACKAGE_NAME_RE = /^(?:@[A-Za-z0-9~-][A-Za-z0-9._~-]*\/)?[A-Za-z0-9~-][A-Za-z0-9._~-]*$/;
 const SCOPE_PREFIX_RE = /^(@[A-Za-z0-9~-][A-Za-z0-9._~-]*)(?:\/([A-Za-z0-9._~-]*))?$/;
@@ -216,7 +237,7 @@ function parseRegistry(raw: unknown, path: string): RegistryConfig {
 
 /** Validates the untrusted JSON config. Throws ConfigError; the message never contains input values. */
 export function parseConfig(raw: unknown): ProxyConfig {
-  const o = obj(raw, "config", ["registries", "allowHosts", "packages", "limits", "dns", "listen", "discovery"]);
+  const o = obj(raw, "config", ["registries", "allowHosts", "packages", "limits", "dns", "listen", "allowClients", "discovery"]);
 
   const regsRaw = arr(o.registries, "config.registries", 32);
   if (regsRaw.length === 0) throw new ConfigError("config.registries: at least one registry is required");
@@ -251,7 +272,8 @@ export function parseConfig(raw: unknown): ProxyConfig {
     if (priv) allowPrivateHosts.add(`${hp.host}:${hp.port}`);
   }
 
-  const pk = obj(o.packages ?? {}, "config.packages", ["allow", "allowPrefixes"]);
+  const pk = obj(o.packages ?? {}, "config.packages", ["allow", "allowPrefixes", "allowAll"]);
+  if (pk.allowAll !== undefined && typeof pk.allowAll !== "boolean") throw new ConfigError("config.packages.allowAll: must be true or false");
   const allow = new Set<string>();
   for (const [i, n] of arr(pk.allow ?? [], "config.packages.allow").entries()) {
     const name = str(n, `config.packages.allow[${i}]`);
@@ -290,9 +312,32 @@ export function parseConfig(raw: unknown): ProxyConfig {
     return ip;
   });
 
-  const ls = obj(o.listen ?? {}, "config.listen", ["host", "port"]);
+  const ls = obj(o.listen ?? {}, "config.listen", ["host", "cidr", "port"]);
+  if (ls.host !== undefined && ls.cidr !== undefined) throw new ConfigError("config.listen: host and cidr are mutually exclusive");
   const host = ls.host === undefined ? "127.0.0.1" : str(ls.host, "config.listen.host");
   if (isIP(host) === 0) throw new ConfigError("config.listen.host: must be an IP address");
+  if (isWildcardAddress(host)) {
+    throw new ConfigError("config.listen.host: a wildcard address is refused (bind the internal-network address with listen.cidr)");
+  }
+  let listenCidr: string | undefined;
+  let listenRange: ClientCidr | undefined;
+  if (ls.cidr !== undefined) {
+    listenCidr = str(ls.cidr, "config.listen.cidr");
+    listenRange = parseClientCidr(listenCidr);
+    if (!listenRange || listenRange.family !== 4 || listenRange.bits < 8 || listenRange.bits > 30) {
+      throw new ConfigError("config.listen.cidr: must be an IPv4 CIDR between /8 and /30");
+    }
+  }
+  const clientsRaw = o.allowClients === undefined ? [] : arr(o.allowClients, "config.allowClients", 16);
+  const allowClients: ClientCidr[] = clientsRaw.map((c, i) => {
+    const parsed = parseClientCidr(str(c, `config.allowClients[${i}]`));
+    if (!parsed) throw new ConfigError(`config.allowClients[${i}]: must be a CIDR like 10.0.0.0/8`);
+    return parsed;
+  });
+  if (allowClients.length === 0 && listenRange) allowClients.push(listenRange);
+  if (allowClients.length === 0 && ls.cidr === undefined && !isLoopbackAddress(host)) {
+    throw new ConfigError("config.allowClients: required when listening on a non-loopback address");
+  }
   const port = ls.port === undefined ? 0 : ls.port;
   if (typeof port !== "number" || !Number.isInteger(port) || port < 0 || port > 65535) {
     throw new ConfigError("config.listen.port: must be an integer 0-65535");
@@ -303,10 +348,11 @@ export function parseConfig(raw: unknown): ProxyConfig {
     allowHosts,
     allowPrivateHosts,
     discovery,
-    packages: Object.freeze({ allow, allowPrefixes: Object.freeze(allowPrefixes) }),
+    packages: Object.freeze({ allow, allowPrefixes: Object.freeze(allowPrefixes), allowAll: pk.allowAll === true }),
     limits: Object.freeze(limits),
     dns: Object.freeze(dns),
-    listen: Object.freeze({ host, port }),
+    listen: Object.freeze({ host, ...(listenCidr !== undefined ? { cidr: listenCidr } : {}), port }),
+    allowClients: Object.freeze(allowClients),
   });
 }
 

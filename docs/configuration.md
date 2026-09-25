@@ -24,6 +24,12 @@ an error, so a typo can't silently weaken a check.
 | `isolation` | `"temp-dir"` | `"temp-dir"`, `"container"` or `"auto"`. See below. `--isolation` overrides it. |
 | `containerRuntime` | `"auto"` | `"auto"` (docker, then podman), `"docker"` or `"podman"`. |
 | `containerNetwork` | `"tests-offline"` | Container mode only. `"tests-offline"`: the test phase runs with `--network none`. `"open"`: tests keep the network. `--network` overrides it. |
+| `registryAuth` | `false` | Private registries through a credential-holding proxy (container isolation only). `--registry-auth` turns it on. See [private-registries.md](private-registries.md); with `--base` these `registry*` options are read from the base ref, not from the checkout under test. |
+| `registryAllowlist` | `true` | With `registryAuth`: only package names from the lockfiles pass the proxy. `false` (or `--no-registry-allowlist`) is reported. |
+| `registryAllowHosts` | `[]` | With `registryAuth`: extra `host[:port]` the proxy may tunnel to (a CDN or binary download host). |
+| `registryDns` | `["1.1.1.1", "9.9.9.9"]` | With `registryAuth`: resolver IPs for registry host names; use your corporate DNS for internal registries. |
+| `registryPrivateHosts` | `[]` | With `registryAuth`: registry host names allowed to resolve to private addresses. |
+| `registryCaFile` | none | With `registryAuth`: PEM file with the CA to trust for a registry with a corporate certificate (an absolute path when `--base` is used). |
 | `containerImage` | `"node:24"` | Image the installs and tests run in. It must contain Node and npm (yarn or pnpm if your project uses them; pnpm in container mode is untested); the full `node` image has the build tools native modules need. |
 
 ## Isolation
@@ -37,7 +43,8 @@ against it. Two levels:
 | `container` | Everything above, run in a docker or podman container whose only mount is the sandbox directory; all capabilities dropped, `no-new-privileges`, a process limit; the container's environment is built from scratch | The install phase keeps full network access: installs need the registry, and docker/podman have no per-host allowlist, so an install script can still send out anything it can read (only the sandbox). The test phase runs in a second container with `--network none` (default). |
 
 `auto` uses a container when an engine is available and falls back to
-`temp-dir` with a warning on stderr. `container` fails with an error when no
+`temp-dir` with a warning on stderr. (`registryAuth` never falls back: without a
+container engine it is an error.) `container` fails with an error when no
 engine works. The report always states the level used (last line of the text
 output, `isolation` in JSON, a footer in the Markdown comment).
 

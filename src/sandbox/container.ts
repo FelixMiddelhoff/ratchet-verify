@@ -114,7 +114,13 @@ export interface RunArgsInput {
   user?: string;
   /** No network at all inside the container (`--network none`): nothing can be sent or fetched. */
   offline?: boolean;
+  /** Attach to this named (internal) network instead of the default one (registry-proxy topology). Exclusive with `offline`. */
+  network?: string;
 }
+
+const NETWORK_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
+/** Engine network modes that are not a user network: `host` would hand the sandbox the host's stack. */
+const RESERVED_NETWORKS = new Set(["host", "bridge", "none", "default", "private", "pasta", "slirp4netns", "container", "ns"]);
 
 /**
  * `docker|podman run` arguments. Filesystem: one bind mount, nothing else from the host.
@@ -122,6 +128,10 @@ export interface RunArgsInput {
  */
 export function buildRunArgs(input: RunArgsInput): string[] {
   const { settings, root } = input;
+  if (input.network !== undefined && input.offline) throw new Error("buildRunArgs: network and offline are mutually exclusive");
+  if (input.network !== undefined && (!NETWORK_NAME_RE.test(input.network) || RESERVED_NETWORKS.has(input.network.toLowerCase()))) {
+    throw new Error(`buildRunArgs: refusing network ${JSON.stringify(input.network)}: it must be a plain user-network name, not an option or an engine network mode`);
+  }
   if (root.includes(",")) throw new Error(`sandbox path contains a comma, which container mounts cannot express: ${root}`);
   const relabel = settings.runtime === "podman" ? ",relabel=private" : ""; // SELinux hosts need it for bind mounts
   const env = Object.entries(buildContainerEnv()).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
@@ -134,6 +144,7 @@ export function buildRunArgs(input: RunArgsInput): string[] {
     "--security-opt", "no-new-privileges",
     "--pids-limit", "1024",
     ...(input.offline ? ["--network", "none"] : []),
+    ...(input.network !== undefined ? ["--network", input.network] : []),
     ...(input.user ? ["--user", input.user] : []),
     ...env,
     settings.image,
@@ -157,11 +168,11 @@ export async function runInContainer(
   args: string[],
   timeoutMs: number,
   exec: Exec = runCommand,
-  phase: { offline?: boolean } = {},
+  phase: { offline?: boolean; /** Internal network to attach to for a phase that needs the registry proxy. */ network?: string } = {},
 ): Promise<RunResult> {
   const name = `ratchet-${randomBytes(6).toString("hex")}`;
   const offline = phase.offline === true && (settings.network ?? "tests-offline") === "tests-offline";
-  const runArgs = buildRunArgs({ settings, root, name, command, args, user: hostUser(settings), offline });
+  const runArgs = buildRunArgs({ settings, root, name, command, args, user: hostUser(settings), offline, network: offline ? undefined : phase.network });
   const result = await exec({ command: settings.runtime, args: runArgs, cwd: process.cwd(), env: hostEnv(), timeoutMs });
   if (result.timedOut) await probe(settings.runtime, ["kill", name], exec).catch(() => undefined);
   return result;

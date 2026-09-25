@@ -1,6 +1,8 @@
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import https from "node:https";
 import { isIP, type Socket } from "node:net";
+import os from "node:os";
+import { clientInCidrs, parseClientCidr } from "./clients.js";
 import { Writable, type Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
@@ -26,6 +28,27 @@ export interface ProxyOptions {
   testDial?: TestDialSeam;
   /** TEST ONLY: extra CA for upstream TLS (lets a loopback fixture with a self-signed certificate be reached through the REAL, seam-less dial path). */
   testTlsCa?: string;
+  /** Local interface listing (tests); default `os.networkInterfaces`. Used to resolve `listen.cidr`. */
+  interfaces?: () => NodeJS.Dict<os.NetworkInterfaceInfo[]>;
+}
+
+/**
+ * The address to bind. With `listen.cidr` it is the ONE local IPv4 address inside that range (the sidecar's address on the
+ * internal network); zero or several matches is an error, never a fallback to a wildcard.
+ */
+export function resolveListenHost(listen: ProxyConfig["listen"], interfaces: () => NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces): string {
+  if (listen.cidr === undefined) return listen.host;
+  const range = parseClientCidr(listen.cidr);
+  if (!range) throw new Error("listen.cidr is not a valid CIDR");
+  const matches: string[] = [];
+  for (const addrs of Object.values(interfaces())) {
+    for (const a of addrs ?? []) {
+      const v4 = String(a.family) === "IPv4" || String(a.family) === "4";
+      if (v4 && clientInCidrs(a.address, [range])) matches.push(a.address);
+    }
+  }
+  if (matches.length !== 1) throw new Error(`listen.cidr ${listen.cidr}: expected exactly one local address in that range, found ${matches.length}`);
+  return matches[0] as string;
 }
 
 export interface RegistryProxy {
@@ -156,7 +179,7 @@ export async function startRegistryProxy(config: ProxyConfig, options: ProxyOpti
   };
   const discoveryOn = config.discovery === "audit";
   const isPackageAllowed = (name: string): boolean | "discovered" => {
-    if (allow.has(name) || config.packages.allowPrefixes.some((p) => name.startsWith(p))) return true;
+    if (config.packages.allowAll || allow.has(name) || config.packages.allowPrefixes.some((p) => name.startsWith(p))) return true;
     return discoveryOn && declared.has(name) ? "discovered" : false;
   };
   const learnKey = (r: RegistryConfig, name: string, version: string): string => `${r.id}\n${name}\n${version}`;
@@ -477,6 +500,19 @@ export async function startRegistryProxy(config: ProxyConfig, options: ProxyOpti
   });
   server.maxConnections = config.limits.maxConnections;
 
+  // Defence in depth for the bind: a peer outside the allowed client ranges is dropped before a byte is parsed (HTTP and CONNECT alike).
+  let refusedClients = 0;
+  if (config.allowClients.length > 0) {
+    server.prependListener("connection", (s: Socket) => {
+      if (clientInCidrs(s.remoteAddress, config.allowClients)) return;
+      refusedClients++;
+      if (refusedClients % 100 === 1) {
+        audit.record({ method: "?", class: "denied", registry: null, host: null, status: 0, decision: "deny", reason: "client-not-allowed" });
+      }
+      s.destroy();
+    });
+  }
+
   const perSource = new Map<string, number>();
   let refusedConnections = 0;
   server.on("connection", (s: Socket) => {
@@ -558,9 +594,10 @@ export async function startRegistryProxy(config: ProxyConfig, options: ProxyOpti
     else socket.destroy();
   });
 
+  const listenHost = resolveListenHost(config.listen, options.interfaces);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen({ port: config.listen.port, host: config.listen.host, backlog: Math.max(511, config.limits.maxConnections) }, () => {
+    server.listen({ port: config.listen.port, host: listenHost, backlog: Math.max(511, config.limits.maxConnections) }, () => {
       server.off("error", reject);
       resolve();
     });
@@ -569,7 +606,7 @@ export async function startRegistryProxy(config: ProxyConfig, options: ProxyOpti
   if (addr === null || typeof addr === "string") throw new Error("proxy failed to bind");
 
   return {
-    host: config.listen.host,
+    host: listenHost,
     port: addr.port,
     redact,
     audit: () => audit.entries(),

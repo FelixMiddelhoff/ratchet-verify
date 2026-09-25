@@ -17,6 +17,10 @@ export interface CliArgs {
   failOn?: "broken" | "risky";
   isolation?: "temp-dir" | "container" | "auto";
   network?: "tests-offline" | "open";
+  /** Opt in to the registry proxy (private registries); `false` only when the flag was not given. */
+  registryAuth?: boolean;
+  /** `--no-registry-allowlist`: turn the package-name allowlist off (reported). */
+  registryAllowlistOff?: boolean;
   /** Also write report.json, report.md and report.sarif here, whatever the stdout format. */
   reportDir?: string;
   help: boolean;
@@ -38,6 +42,8 @@ Usage: ratchet [project-dir] (--base <git-ref> | --old <lockfile>) [options]
   --report-dir <dir>  also write report.json, report.md and report.sarif into <dir>
   --isolation <mode>  temp-dir (default), container (docker/podman) or auto
   --network <mode>    container mode: tests-offline (default, tests get no network) or open
+  --registry-auth     container mode: install through a proxy that holds the registry credentials from .npmrc (they never enter the sandbox)
+  --no-registry-allowlist  with --registry-auth: also let the proxy serve package names that are not in the lockfiles (reported)
   --fail-on <level>  exit 1 when the overall verdict is "broken" (default) or "risky"
   -v, --version       print the version
   -h, --help          show this help
@@ -62,6 +68,8 @@ export function parseCliArgs(argv: string[]): CliArgs {
       "fail-on": { type: "string" },
       isolation: { type: "string" },
       network: { type: "string" },
+      "registry-auth": { type: "boolean" },
+      "no-registry-allowlist": { type: "boolean" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
     },
@@ -88,6 +96,8 @@ export function parseCliArgs(argv: string[]): CliArgs {
     throw new Error(`--network must be "tests-offline" or "open", got "${network}"`);
   }
 
+  if (values["no-registry-allowlist"] && !values["registry-auth"]) throw new Error("--no-registry-allowlist only makes sense together with --registry-auth");
+
   const oldWorkspacePackageJsons: Record<string, string> = {};
   for (const pair of values["old-workspace-package-json"] ?? []) {
     const eq = pair.indexOf("=");
@@ -109,6 +119,8 @@ export function parseCliArgs(argv: string[]): CliArgs {
     failOn,
     isolation,
     network,
+    ...(values["registry-auth"] ? { registryAuth: true } : {}),
+    ...(values["no-registry-allowlist"] ? { registryAllowlistOff: true } : {}),
     reportDir: values["report-dir"],
     help: values.help ?? false,
     version: values.version ?? false,

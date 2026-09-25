@@ -11,7 +11,7 @@ interface LockfileV1Entry {
 
 interface RawLockfile {
   lockfileVersion?: number;
-  packages?: Record<string, { version?: string; link?: boolean }>;
+  packages?: Record<string, { version?: string; link?: boolean; hasInstallScript?: boolean }>;
   dependencies?: Record<string, LockfileV1Entry>;
 }
 
@@ -38,7 +38,7 @@ function fromPackagesMap(packages: NonNullable<RawLockfile["packages"]>): Instal
     const name = packageNameFromPath(path);
     // Skips the root entry and workspace sources; links carry no version of their own.
     if (name === undefined || entry.version === undefined || entry.link) continue;
-    result.set(path, { name, version: entry.version });
+    result.set(path, { name, version: entry.version, ...(entry.hasInstallScript === true ? { installScript: true } : {}) });
   }
   return result;
 }

@@ -23,6 +23,28 @@ another file with `--new <file>`.
 ratchet reads pnpm lockfileVersion 5.x, 6.x and 9.x. A newer format needs a parser update
 ([help wanted](../README.md#help-wanted)).
 
+**`registryAuth needs container isolation (docker or podman): a temp-dir sandbox cannot be confined to the registry proxy, and ratchet never runs unprotected instead.`**
+The private-registry proxy only works with `--isolation container`. See
+[private-registries.md](private-registries.md).
+
+**`environment variable(s) referenced by .npmrc but not set: NPM_TOKEN`**
+Your `.npmrc` uses `${NPM_TOKEN}` and the variable is not in ratchet's
+environment. In CI pass it as `env:` of the step. ratchet never substitutes an
+empty token.
+
+**`registry must be an https URL: the proxy only talks to https registries`**
+The proxy refuses `http://` registries so a credential never travels in clear text.
+
+**`registry settings (...) in the working tree's .ratchetrc differ from origin/main and are ignored`**
+With `--base`, credentials only follow the settings on the base ref. Commit the
+`registry*` options and the registry lines of `.npmrc` to the base branch first.
+See [private-registries.md](private-registries.md#in-ci-always-use---base).
+
+**`SUSPICIOUS install activity: the registry proxy refused requests ...`**
+Something in the install asked the proxy for a host or package it should not.
+Look at which dependency's install script changed (verdict notes say
+"runs an install script"); do not merge until you know why.
+
 **`.ratchetrc: unknown option(s): ignor`**
 Unknown keys are rejected so a typo can't silently weaken a check. See
 [configuration.md](configuration.md) for the option names.

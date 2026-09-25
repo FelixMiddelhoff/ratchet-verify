@@ -137,11 +137,13 @@ ratchet-verify [project-dir] (--base <git-ref> | --old <lockfile>) [options]
   --json | --sarif | --markdown   output format (default: text)
   --report-dir <dir>  also write report.json, report.md and report.sarif
   --isolation <mode>  temp-dir (default), container (docker/podman) or auto
+  --registry-auth     container mode: private registries through a credential-holding proxy (opt-in)
+  --no-registry-allowlist  with --registry-auth: also serve package names not in the lockfiles (reported)
   --fail-on <level>   exit 1 on "broken" (default) or "risky"
   -v, --version       print the version
 ```
 
-Project options (`ignore`, `maxInstalls`, `testTimeoutMs`, `failOn`, `isolation`, `containerRuntime`, `containerImage`) live in
+Project options (`ignore`, `maxInstalls`, `testTimeoutMs`, `failOn`, `isolation`, `containerRuntime`, `containerImage`, and the `registry*` options for private registries) live in
 a `.ratchetrc` file: see [docs/configuration.md](docs/configuration.md).
 
 ## GitHub Action
@@ -189,6 +191,18 @@ was used:
   no per-host allowlist exists), so a malicious install script can still
   exfiltrate what it can see, which in a container is only the sandbox.
   `temp-dir` restricts nothing.
+- **`container` + `--registry-auth` (opt-in): private registries without
+  handing over your token.** The credential lives only in a small proxy
+  container; the sandbox runs on an internal network whose only reachable peer
+  is that proxy, so install scripts get no token, no internet and no direct
+  route to the registry. The proxy serves only package names from your
+  lockfiles and refuses everything else; refused requests that no normal
+  install makes turn the run `risky` ("SUSPICIOUS install activity").
+  Dependencies that run, or newly add, an install script are flagged. If the
+  protection cannot be set up, the run fails instead of running unprotected.
+  In CI use `--base` (the Action always does, and has a `registry-auth` input),
+  so a pull request cannot redirect the credential.
+  Details, limits and setup: [docs/private-registries.md](docs/private-registries.md).
 
 The repository's [corpus](corpus/) replays a credential-stealing `preinstall`
 script and checks that nothing leaks, and an integration test shows the
@@ -198,8 +212,10 @@ machines either way. Details: [docs/configuration.md](docs/configuration.md#isol
 
 ## Limitations
 
-- **Install-phase network is open.** In container mode tests run offline, but
-  install scripts can reach any host (only the sandbox is readable to them).
+- **Install-phase network is open by default.** In container mode tests run
+  offline, but install scripts can reach any host (only the sandbox is
+  readable to them). With `--registry-auth` the install phase is confined to
+  the registry proxy instead (see above).
 - **Tests-based.** ratchet proves "your tests still pass and no cited
   breaking change hits your code". It does *not* prove a version isn't
   malicious: behaviour-preserving malice (the event-stream and ua-parser-js
@@ -253,8 +269,10 @@ machines either way. Details: [docs/configuration.md](docs/configuration.md#isol
   `parse`) can match an unrelated breaking note. False positives cost a
   minute of review; a missed break costs an incident, and ratchet prefers the
   former.
-- **Private registries** that need `.npmrc` credentials can't authenticate
-  inside the sandbox.
+- **Private registries** need the opt-in `--registry-auth` (container
+  isolation, npm and yarn classic verified against a real registry fixture; yarn
+  berry and pnpm not yet). Without it they can't authenticate inside the
+  sandbox. See [docs/private-registries.md](docs/private-registries.md).
 - **Changelog sources, in priority order**: host release notes (GitHub, or
   GitLab releases API), then a `CHANGELOG`/`HISTORY`/`CHANGES` file in the
   repository (GitHub, GitLab, Bitbucket raw files), then the GitHub wiki, then

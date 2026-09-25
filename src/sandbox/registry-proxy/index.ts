@@ -12,3 +12,4 @@ export * from "./gate.js";
 export * from "./netguard.js";
 export * from "./packument.js";
 export * from "./sink.js";
+export * from "./clients.js";

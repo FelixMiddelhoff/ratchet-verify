@@ -29,11 +29,12 @@ export function parsePnpmLock(text: string): InstalledPackages {
     if (ref) direct.push({ importer, depName, ...ref });
   }
 
-  const found = new Map<string, { name: string; version: string }>(); // "name@version"
+  const found = new Map<string, { name: string; version: string; installScript?: boolean }>(); // "name@version"
   const add = (key: string, entry: Node | string | undefined): void => {
     const ref = parseKey(key, major);
     if (!ref || (typeof entry === "object" && isNonRegistry(entry))) return;
-    found.set(`${ref.name}@${ref.version}`, ref);
+    const build = typeof entry === "object" && scalar(entry.requiresBuild) === "true";
+    found.set(`${ref.name}@${ref.version}`, { ...ref, ...(build || found.get(`${ref.name}@${ref.version}`)?.installScript ? { installScript: true } : {}) });
   };
   for (const [key, entry] of Object.entries(packages)) add(key, entry);
   // v9 keeps installed variants (peer suffixes) in `snapshots`; all of them collapse to the same name@version.
@@ -57,7 +58,7 @@ export function parsePnpmLock(text: string): InstalledPackages {
     }
     const aliases = [...(aliasesFor.get(ref.name) ?? [])];
     const importers = [...new Set(direct.filter((d) => d.name === ref.name && d.version === ref.version).map((d) => d.importer))];
-    result.set(uniquePath(result, path, ref.version), { name: ref.name, version: ref.version, ...(aliases.length ? { aliases } : {}), ...(importers.length ? { importers } : {}) });
+    result.set(uniquePath(result, path, ref.version), { name: ref.name, version: ref.version, ...(ref.installScript ? { installScript: true } : {}), ...(aliases.length ? { aliases } : {}), ...(importers.length ? { importers } : {}) });
   }
   return result;
 }
