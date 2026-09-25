@@ -106,6 +106,7 @@ describe("package manager through the proxy on a real engine", () => {
           limits: { requestTimeoutMs: 15_000 },
         });
         await withProxyTopology({ settings: s, config, engine: e, extraCaFile: certFile }, async (topo) => {
+          let lockText = "";
           const proxy = { network: topo.networkName, proxyUrl: topo.proxyUrl, registries: [{ id: "main", isDefault: true }], lockUrlMappings: [] };
           await withSandbox({ projectDir: project, container: s, proxy }, async (sb) => {
             const install = await sb.run(c.manager, c.args, 240_000);
@@ -116,7 +117,19 @@ describe("package manager through the proxy on a real engine", () => {
             for (const f of [CANARY, OTHER_TOKEN, "evil.example"]) assert.ok(!lock.includes(f), `lockfile must not contain ${f}`);
             const rc = readFileSync(join(sb.dir, ".npmrc"), "utf8");
             assert.ok(!rc.includes(OTHER_TOKEN) && !rc.includes("evil.example") && rc.includes("legacy-peer-deps=true"));
+            lockText = lock;
           });
+          if (c.manager === "yarn") {
+            // A lockfile that records the UPSTREAM url (what a developer's machine wrote): the sandbox copy is pointed at the proxy.
+            const upstreamLock = lockText.split(topo.proxyUrl).join(`https://${ip}:8443`);
+            assert.ok(upstreamLock.includes(`https://${ip}:8443/left-pad`), upstreamLock);
+            const mappings = [{ from: `https://${ip}:8443/`, to: `${topo.proxyUrl}/` }];
+            await withSandbox({ projectDir: project, container: s, proxy: { ...proxy, lockUrlMappings: mappings }, lockfile: { name: "yarn.lock", content: upstreamLock } }, async (sb) => {
+              const frozen = await sb.run("yarn", ["install", "--frozen-lockfile", "--ignore-scripts", "--non-interactive"], 240_000);
+              assert.equal(frozen.exitCode, 0, frozen.output);
+              assert.ok(existsSync(join(sb.dir, "node_modules", "left-pad", "index.js")));
+            });
+          }
           const fx = (await e.run(["logs", name])).output;
           const want = createHash("sha256").update(`Bearer ${CANARY}`).digest("hex");
           const reqs = fx.split("\n").filter((l) => l.startsWith("REQ"));
