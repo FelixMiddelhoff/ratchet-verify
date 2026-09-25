@@ -9,6 +9,7 @@ import { runPipeline, type PipelineDeps } from "../pipeline/index.js";
 import { realDeps } from "../pipeline/real.js";
 import type { SandboxProxy } from "../sandbox/proxy-client.js";
 import type { RegistryProxyInfo } from "../report/index.js";
+import { applyTrustedRegistryConfig } from "./trusted.js";
 import { withRegistryProxy } from "../pipeline/registry-proxy.js";
 import { resolveIsolation, type ResolvedIsolation } from "../sandbox/index.js";
 import { renderJson, renderSarif, renderText, type Report } from "../report/index.js";
@@ -55,11 +56,19 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
 
     const projectDir = resolve(args.projectDir);
     const config = await loadConfig(projectDir);
+    // Credentials follow the base ref's registry settings, not the checkout under test (see trusted.ts).
+    let projectNpmrc: { text: string | undefined } | undefined;
+    if (args.base) {
+      const trusted = await applyTrustedRegistryConfig(config, args.base, { list: () => listFilesAtRef(projectDir, args.base!), read: (p) => readFileAtRef(projectDir, args.base!, p) });
+      for (const note of trusted.notes) io.err(`ratchet: ${note}`);
+      projectNpmrc = { text: trusted.npmrc };
+    }
     if (args.failOn) config.failOn = args.failOn;
     if (args.isolation) config.isolation = args.isolation;
     if (args.network) config.containerNetwork = args.network;
     if (args.registryAuth) config.registryAuth = true;
     if (args.registryAllowlistOff) config.registryAllowlist = false;
+    if (config.registryAuth && !args.base) io.err("ratchet: registry settings and credentials are read from the working tree (no --base): in CI use --base so a pull request cannot redirect a credential");
 
     const manager = await pickManager(args.newLockfile ?? args.oldLockfile, projectDir);
     const oldLockfile = args.oldLockfile ? await readFile(args.oldLockfile, "utf8") : await readFileAtRef(projectDir, args.base!, manager.lockfile);
@@ -78,7 +87,7 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
     if (workspaces.length > 0) io.err(`ratchet: workspace project (${workspaces.length} packages); tests run via the root scripts.test only`);
     const manifestNames = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"].flatMap((k) => Object.keys((manifest[k] as Record<string, string> | undefined) ?? {}));
     const report = await withRegistryProxy(
-      { config, isolation, projectDir, env: io.env, lockfiles: [oldLockfile, newLockfile], manifestNames, log: (line) => io.err(`ratchet: ${line}`) },
+      { config, isolation, projectDir, env: io.env, lockfiles: [oldLockfile, newLockfile], manifestNames, projectNpmrc, log: (line) => io.err(`ratchet: ${line}`) },
       (run) => {
         const deps = (makeDeps ?? defaultDeps(config, io.env))({ projectDir, oldLockfile, manager: manager.name, oldPackageJson, oldFiles, isolation, proxy: run?.proxy, registryProxyInfo: run?.info });
         return runPipeline({ oldLockfile, newLockfile, manifest, workspaces, oldPackageJson, config }, deps);

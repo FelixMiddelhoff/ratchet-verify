@@ -23,6 +23,8 @@ export interface RegistryProxyOptions {
   /** Lockfile states under test (old and new): their package names form the allowlist. */
   lockfiles: readonly string[];
   manifestNames: readonly string[];
+  /** The project `.npmrc` to take registries and credentials from, when it must not be the working tree's (--base: the base ref's). `{ text: undefined }` = none. */
+  projectNpmrc?: { text: string | undefined };
   log?: (line: string) => void;
   /** Test seams. */
   homeDir?: string;
@@ -50,7 +52,8 @@ export async function withRegistryProxy<T>(options: RegistryProxyOptions, fn: (r
     throw new Error('registryAuth needs container isolation (docker or podman): a temp-dir sandbox cannot be confined to the registry proxy, and ratchet never runs unprotected instead. Use --isolation container.');
   }
   const userRc = options.env.NPM_CONFIG_USERCONFIG ?? join(options.homeDir ?? homedir(), ".npmrc");
-  const layers = [await readIfExists(join(options.projectDir, ".npmrc")), await readIfExists(userRc)].filter((t): t is string => t !== undefined);
+  const projectRc = options.projectNpmrc ? options.projectNpmrc.text : await readIfExists(join(options.projectDir, ".npmrc"));
+  const layers = [projectRc, await readIfExists(userRc)].filter((t): t is string => t !== undefined);
   const sourced = sourceRegistries(layers, options.env, config.registryPrivateHosts);
   const allowlistOn = config.registryAllowlist;
   const names = allowedPackageNames(options.lockfiles, options.manifestNames);
