@@ -6,6 +6,7 @@ import {
   buildProxyConfig, cidrOverlap, decideSweep, judgeSelfTest, labelArgs, makeLabels, parseCidr, parseInventory, pickSubnet, ProxyTopologyError,
   sweepStale, withInternalSubnet, withProxyTopology, type ProxyConfigInput, type TopologyOptions,
 } from "../../src/sandbox/proxy-topology/index.js";
+import { sidecarCreateArgs } from "../../src/sandbox/proxy-topology/commands.js";
 import { FakeEngine, type FakeBehavior } from "./fake-engine.js";
 
 const CANARY = "CANARY-tok-9f3a7c21d4b85e60aa17";
@@ -479,4 +480,13 @@ describe("threat: teardown reports clean only when the verification itself succe
       assert.match(err.details.join(" "), /could not be verified/);
     });
   }
+});
+
+describe("sidecar mounts", () => {
+  test("podman relabels the read-only mounts as shared, docker does not", () => {
+    const input = { name: "n", network: "net", labels: makeLabels("aaaaaaaa-0000-0000-0000-000000000001"), image: "node:24", proxyDir: "/d", extraCaFile: "/ca.pem" };
+    const mounts = (runtime: "docker" | "podman") => sidecarCreateArgs({ ...input, runtime }).filter((x, i, a) => a[i - 1] === "--mount");
+    assert.deepEqual(mounts("podman"), ["type=bind,source=/d,target=/proxy,readonly,relabel=shared", "type=bind,source=/ca.pem,target=/ca/ca.pem,readonly,relabel=shared"]);
+    assert.deepEqual(mounts("docker"), ["type=bind,source=/d,target=/proxy,readonly", "type=bind,source=/ca.pem,target=/ca/ca.pem,readonly"]);
+  });
 });

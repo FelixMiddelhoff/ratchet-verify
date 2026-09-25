@@ -36,9 +36,10 @@ export interface SidecarCreateInput {
   extraCaFile?: string;
 }
 
-const bind = (source: string, target: string): string[] => {
+/** Podman on SELinux hosts needs a relabel; `shared` because concurrent sidecars mount the same read-only files (docker's --mount has no such option, same as the sandbox mount). */
+const bind = (runtime: ContainerRuntime, source: string, target: string): string[] => {
   if (source.includes(",")) throw new Error(`mount path contains a comma, which container mounts cannot express: ${source}`);
-  return ["--mount", `type=bind,source=${source},target=${target},readonly`];
+  return ["--mount", `type=bind,source=${source},target=${target},readonly${runtime === "podman" ? ",relabel=shared" : ""}`];
 };
 
 /**
@@ -57,8 +58,8 @@ export function sidecarCreateArgs(input: SidecarCreateInput): string[] {
     "--read-only",
     "--pids-limit", "256",
     "--memory", "512m",
-    ...bind(input.proxyDir, SIDECAR_DIST_TARGET),
-    ...(input.extraCaFile !== undefined ? [...bind(input.extraCaFile, SIDECAR_CA_TARGET), "-e", `NODE_EXTRA_CA_CERTS=${SIDECAR_CA_TARGET}`] : []),
+    ...bind(input.runtime, input.proxyDir, SIDECAR_DIST_TARGET),
+    ...(input.extraCaFile !== undefined ? [...bind(input.runtime, input.extraCaFile, SIDECAR_CA_TARGET), "-e", `NODE_EXTRA_CA_CERTS=${SIDECAR_CA_TARGET}`] : []),
     input.image,
     "node", `${SIDECAR_DIST_TARGET}/main.js`,
   ];
