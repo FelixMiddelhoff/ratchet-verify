@@ -357,7 +357,7 @@ describe("stale sweep decision table", () => {
     assert.deepEqual(decideSweep("ci-1:100", 1_000_000 - 700, ctx([100])), { sweep: false, reason: "live-owner" });
     assert.deepEqual(decideSweep("ci-1:100", young, ctx([])), { sweep: false, reason: "young" });
     assert.deepEqual(decideSweep("ci-1:100", 1_000_000 - 700, ctx([])), { sweep: true, reason: "dead-owner" });
-    assert.deepEqual(decideSweep("other:100", young, ctx([])), { sweep: false, reason: "other-host" });
+    assert.deepEqual(decideSweep("other:100", 1_000_000 - 700, ctx([])), { sweep: false, reason: "other-host" });
     assert.deepEqual(decideSweep("other:100", old, ctx([])), { sweep: true, reason: "too-old" });
     assert.deepEqual(decideSweep("ci-1:100", old, ctx([100])), { sweep: true, reason: "too-old" });
     assert.deepEqual(decideSweep("ci-1:100", 1_000_000 - 11 * 3600, ctx([100])), { sweep: false, reason: "live-owner" });
