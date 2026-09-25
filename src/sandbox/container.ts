@@ -168,11 +168,11 @@ export async function runInContainer(
   args: string[],
   timeoutMs: number,
   exec: Exec = runCommand,
-  phase: { offline?: boolean } = {},
+  phase: { offline?: boolean; /** Internal network to attach to for a phase that needs the registry proxy. */ network?: string } = {},
 ): Promise<RunResult> {
   const name = `ratchet-${randomBytes(6).toString("hex")}`;
   const offline = phase.offline === true && (settings.network ?? "tests-offline") === "tests-offline";
-  const runArgs = buildRunArgs({ settings, root, name, command, args, user: hostUser(settings), offline });
+  const runArgs = buildRunArgs({ settings, root, name, command, args, user: hostUser(settings), offline, network: offline ? undefined : phase.network });
   const result = await exec({ command: settings.runtime, args: runArgs, cwd: process.cwd(), env: hostEnv(), timeoutMs });
   if (result.timedOut) await probe(settings.runtime, ["kill", name], exec).catch(() => undefined);
   return result;
