@@ -179,7 +179,7 @@ export async function startRegistryProxy(config: ProxyConfig, options: ProxyOpti
   };
   const discoveryOn = config.discovery === "audit";
   const isPackageAllowed = (name: string): boolean | "discovered" => {
-    if (allow.has(name) || config.packages.allowPrefixes.some((p) => name.startsWith(p))) return true;
+    if (config.packages.allowAll || allow.has(name) || config.packages.allowPrefixes.some((p) => name.startsWith(p))) return true;
     return discoveryOn && declared.has(name) ? "discovered" : false;
   };
   const learnKey = (r: RegistryConfig, name: string, version: string): string => `${r.id}\n${name}\n${version}`;

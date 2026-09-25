@@ -99,7 +99,7 @@ export interface ProxyConfig {
   readonly allowPrivateHosts: ReadonlySet<string>;
   /** "audit": dependency names declared by an allowed packument that the client then requests are auto-allowed and recorded. */
   readonly discovery: Discovery;
-  readonly packages: { readonly allow: ReadonlySet<string>; readonly allowPrefixes: readonly string[] };
+  readonly packages: { readonly allow: ReadonlySet<string>; readonly allowPrefixes: readonly string[]; /** Every syntactically valid package name passes (the user switched the allowlist off; still no query strings, no non-package paths). */ readonly allowAll: boolean };
   readonly limits: Readonly<Limits>;
   /** Explicit resolver IPs for upstream names; the sidecar never uses libc. */
   readonly dns: readonly string[];
@@ -272,7 +272,8 @@ export function parseConfig(raw: unknown): ProxyConfig {
     if (priv) allowPrivateHosts.add(`${hp.host}:${hp.port}`);
   }
 
-  const pk = obj(o.packages ?? {}, "config.packages", ["allow", "allowPrefixes"]);
+  const pk = obj(o.packages ?? {}, "config.packages", ["allow", "allowPrefixes", "allowAll"]);
+  if (pk.allowAll !== undefined && typeof pk.allowAll !== "boolean") throw new ConfigError("config.packages.allowAll: must be true or false");
   const allow = new Set<string>();
   for (const [i, n] of arr(pk.allow ?? [], "config.packages.allow").entries()) {
     const name = str(n, `config.packages.allow[${i}]`);
@@ -347,7 +348,7 @@ export function parseConfig(raw: unknown): ProxyConfig {
     allowHosts,
     allowPrivateHosts,
     discovery,
-    packages: Object.freeze({ allow, allowPrefixes: Object.freeze(allowPrefixes) }),
+    packages: Object.freeze({ allow, allowPrefixes: Object.freeze(allowPrefixes), allowAll: pk.allowAll === true }),
     limits: Object.freeze(limits),
     dns: Object.freeze(dns),
     listen: Object.freeze({ host, ...(listenCidr !== undefined ? { cidr: listenCidr } : {}), port }),

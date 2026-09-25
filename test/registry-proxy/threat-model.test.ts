@@ -1,3 +1,4 @@
+import { parseConfig } from "../../src/sandbox/registry-proxy/config.js";
 import assert from "node:assert/strict";
 import net from "node:net";
 import { inspect } from "node:util";
@@ -227,6 +228,20 @@ describe("threat model rows (each row of ratchet-private-registries-plan.md is a
       },
       { config: (b) => ({ ...b, packages: { allow: [], allowPrefixes: ["bisect-", "@bisect/"] } }) },
     ));
+
+  test("allowAll (allowlist switched off): any valid name passes, malformed names and queries still do not", () =>
+    withWorld(
+      async (w) => {
+        assert.equal((await get(w.proxy.port, "/anything-at-all")).status !== 403, true);
+        assert.equal((await get(w.proxy.port, "/%2e%2e%2fevil")).status, 400);
+        assert.equal((await get(w.proxy.port, "/left-pad?d=x")).status, 403);
+      },
+      { config: (b) => ({ ...b, packages: { allow: [], allowAll: true } }) },
+    ));
+
+  test("allowAll must be a boolean", () => {
+    assert.throws(() => parseConfig({ registries: [{ id: "main", upstream: "https://registry.example.com" }], dns: ["127.0.0.1"], packages: { allowAll: "yes" } }), /allowAll/);
+  });
 
   test("threat: covert channel in request paths/queries (only expected names pass, everything else logged as denied)", () =>
     withWorld(async (w) => {

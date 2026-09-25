@@ -20,7 +20,7 @@ export interface RegistryInput {
 export interface ProxyConfigInput {
   registries: readonly RegistryInput[];
   allowHosts?: ReadonlyArray<string | { host: string; allowPrivateAddresses?: boolean }>;
-  packages?: { allow?: readonly string[]; allowPrefixes?: readonly string[] };
+  packages?: { allow?: readonly string[]; allowPrefixes?: readonly string[]; /** The user turned the allowlist off. */ allowAll?: boolean };
   discovery?: "off" | "audit";
   /** Explicit resolver IPs for the sidecar's own upstream lookups (mandatory: the sidecar never uses libc). */
   dns: readonly string[];
@@ -51,7 +51,7 @@ export function buildProxyConfig(input: ProxyConfigInput): BuiltProxyConfig {
       ...(r.credential !== undefined ? { credential: { type: r.credential.type, secret: r.credential.material()[0] } } : {}),
     })),
     allowHosts: input.allowHosts ?? [],
-    packages: { allow: [...(input.packages?.allow ?? [])], allowPrefixes: [...(input.packages?.allowPrefixes ?? [])] },
+    packages: { allow: [...(input.packages?.allow ?? [])], allowPrefixes: [...(input.packages?.allowPrefixes ?? [])], ...(input.packages?.allowAll ? { allowAll: true } : {}) },
     discovery: input.discovery ?? "off",
     dns: [...input.dns],
     limits: input.limits ?? {},
