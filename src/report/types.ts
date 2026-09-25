@@ -69,6 +69,11 @@ export interface RegistryProxyInfo {
   discoveredPackages: string[];
   requestsAllowed: number;
   requestsDenied: number;
+  /**
+   * Refused requests that a normal install never makes (a tunnel to an unlisted host, a package nobody declared, a write method,
+   * a path outside the package layout): what an install script talking to the proxy looks like. Aggregated, no raw request text.
+   */
+  suspicious: Array<{ class: string; reason: string; name?: string; count: number }>;
   /** The audit was cut at its cap: the counts and discovered names are a lower bound. */
   auditTruncated: boolean;
 }

@@ -1,5 +1,5 @@
 import { groupVerdicts, overallLabel } from "../report/group.js";
-import { describeIsolation, describeRegistryProxy } from "../report/isolation.js";
+import { describeIsolation, describeRegistryProxy, describeSuspicious } from "../report/isolation.js";
 import type { DependencyVerdict, Evidence, Report } from "../report/index.js";
 
 /** Lets the action find and update its own comment instead of posting a new one per push. */
@@ -15,6 +15,7 @@ export function renderMarkdown(report: Report): string {
   const isolationLine = [
     ...(report.isolation ? ["", `<sub>isolation: ${escapeHtml(describeIsolation(report.isolation))}</sub>`] : []),
     ...(report.registryProxy ? ["", `<sub>registry proxy: ${escapeHtml(describeRegistryProxy(report.registryProxy))}</sub>`] : []),
+    ...(report.registryProxy && describeSuspicious(report.registryProxy) ? ["", `> ⚠️ ${escapeHtml(describeSuspicious(report.registryProxy)!)}`] : []),
   ];
 
   if (report.verdicts.length === 0) {

@@ -20,3 +20,10 @@ export function describeRegistryProxy(info: RegistryProxyInfo): string {
   ];
   return parts.join("; ");
 }
+
+/** The evidence behind an escalated verdict; empty when the proxy refused nothing unusual. */
+export function describeSuspicious(info: RegistryProxyInfo): string | undefined {
+  if (info.suspicious.length === 0) return undefined;
+  const items = info.suspicious.map((s) => `${s.count}x ${s.class}: ${s.reason}${s.name ? ` (${s.name})` : ""}`).join("; ");
+  return `SUSPICIOUS install activity: the registry proxy refused requests no normal install makes (${items}). An install script may have tried to reach the network through it`;
+}

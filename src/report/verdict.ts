@@ -25,7 +25,9 @@ const SEVERITY: VerdictStatus[] = ["safe", "risky", "broken"];
 
 export function buildReport(assessments: DependencyAssessment[], isolation?: IsolationInfo, registryProxy?: RegistryProxyInfo): Report {
   const verdicts = assessments.map(judge);
-  const overall = verdicts.reduce<VerdictStatus>((worst, v) => (SEVERITY.indexOf(v.status) > SEVERITY.indexOf(worst) ? v.status : worst), "safe");
+  const worst = verdicts.reduce<VerdictStatus>((w, v) => (SEVERITY.indexOf(v.status) > SEVERITY.indexOf(w) ? v.status : w), "safe");
+  // Refused requests during the install phase are evidence of their own: a run that saw them is never plainly safe.
+  const overall: VerdictStatus = worst === "safe" && (registryProxy?.suspicious.length ?? 0) > 0 ? "risky" : worst;
   return { schemaVersion: 1, overall, ...(isolation ? { isolation } : {}), ...(registryProxy ? { registryProxy } : {}), verdicts };
 }
 

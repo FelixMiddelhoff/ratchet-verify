@@ -280,6 +280,7 @@ test("registry proxy disclosure: text footer, markdown footer, JSON field; no cr
     discoveredPackages: ["gamma"],
     requestsAllowed: 40,
     requestsDenied: 2,
+    suspicious: [],
     auditTruncated: false,
   };
   const report = buildReport([], { level: "container", runtime: "podman", image: "node:24" }, info);
@@ -307,4 +308,31 @@ test("install script: newly added downgrades safe to partial with a caveat; an e
   assert.ok(withScript(false, true, "added").caveats.some((c) => /new dependency that runs an install script/.test(c)));
   assert.deepEqual(withScript(true, false).notes.filter((n) => /install script/.test(n)), []);
   assert.deepEqual(withScript(true, true, "removed").notes.filter((n) => /install script/.test(n)), []);
+});
+
+import { describeSuspicious } from "../src/report/index.js";
+import { suspiciousDenials } from "../src/pipeline/registry-proxy.js";
+import type { AuditEntry } from "../src/sandbox/registry-proxy/index.js";
+
+test("suspicious refusals escalate a plainly safe run to risky and are shown with their counts", () => {
+  const entry = (cls: string, reason: string, name: string | null = null, decision = "deny") => ({ decision, class: cls, reason, name }) as unknown as AuditEntry;
+  const audit = [
+    entry("connect", "host-not-allowed"), entry("connect", "host-not-allowed"), entry("denied", "package-not-allowlisted", "evil-lib"),
+    entry("denied", "npm-api-path"), entry("packument", "ok", "a", "allow"), entry("tarball", "ok", "a", "allow"),
+  ];
+  const suspicious = suspiciousDenials(audit);
+  assert.deepEqual(suspicious, [
+    { class: "connect", reason: "host-not-allowed", count: 2 },
+    { class: "denied", reason: "package-not-allowlisted", name: "evil-lib", count: 1 },
+  ]);
+  const info = { registries: [], allowlist: "on" as const, allowHosts: [], allowedPackages: 1, discoveredPackages: [], requestsAllowed: 2, requestsDenied: 4, suspicious, auditTruncated: false };
+  const safe = () => assessment();
+  const report = buildReport([safe()], { level: "container" }, info);
+  assert.equal(report.overall, "risky");
+  assert.equal(report.verdicts[0]!.status, "safe");
+  assert.match(renderText(report), /SUSPICIOUS install activity.*2x connect: host-not-allowed.*1x denied: package-not-allowlisted \(evil-lib\)/);
+  assert.match(renderMarkdown(report), /> ⚠️ SUSPICIOUS install activity/);
+  assert.equal(buildReport([safe()], { level: "container" }, { ...info, suspicious: [] }).overall, "safe");
+  assert.equal(describeSuspicious({ ...info, suspicious: [] }), undefined);
+  assert.equal(suspiciousDenials([entry("denied", "npm-api-path")]).length, 0, "npm's own /-/ probes are benign");
 });

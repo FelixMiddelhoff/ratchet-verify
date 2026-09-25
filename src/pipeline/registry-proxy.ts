@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import type { Config } from "../config.js";
+import type { AuditEntry } from "../sandbox/registry-proxy/index.js";
 import type { RegistryProxyInfo } from "../report/index.js";
 import type { ResolvedIsolation } from "../sandbox/index.js";
 import type { SandboxProxy } from "../sandbox/proxy-client.js";
@@ -29,6 +30,23 @@ export interface RegistryProxyOptions {
   /** Test seams. */
   homeDir?: string;
   engine?: Engine;
+}
+
+/** Refusals a normal package-manager install does not cause (npm's own `/-/` API probes are the only known benign ones). */
+const BENIGN_DENIALS = new Set(["npm-api-path"]);
+
+export function suspiciousDenials(audit: readonly AuditEntry[]): RegistryProxyInfo["suspicious"] {
+  const counts = new Map<string, { class: string; reason: string; name?: string; count: number }>();
+  for (const e of audit) {
+    if (e.decision !== "deny" || BENIGN_DENIALS.has(e.reason)) continue;
+    const key = `${e.class}
+${e.reason}
+${e.name ?? ""}`;
+    const entry = counts.get(key) ?? { class: e.class, reason: e.reason, ...(e.name ? { name: e.name } : {}), count: 0 };
+    entry.count++;
+    counts.set(key, entry);
+  }
+  return [...counts.values()].sort((a, b) => b.count - a.count || a.class.localeCompare(b.class) || a.reason.localeCompare(b.reason)).slice(0, 20);
 }
 
 const readIfExists = async (path: string): Promise<string | undefined> => {
@@ -90,6 +108,7 @@ export async function withRegistryProxy<T>(options: RegistryProxyOptions, fn: (r
         discoveredPackages: topology.discoveredNames(),
         requestsAllowed: audit.filter((e) => e.decision === "allow").length,
         requestsDenied: audit.filter((e) => e.decision === "deny").length,
+        suspicious: suspiciousDenials(audit),
         auditTruncated: topology.auditTruncated(),
       };
     };
