@@ -200,7 +200,8 @@ was used:
   install makes turn the run `risky` ("SUSPICIOUS install activity").
   Dependencies that run, or newly add, an install script are flagged. If the
   protection cannot be set up, the run fails instead of running unprotected.
-  In CI use `--base`, so a pull request cannot redirect the credential.
+  In CI use `--base` (the Action always does, and has a `registry-auth` input),
+  so a pull request cannot redirect the credential.
   Details, limits and setup: [docs/private-registries.md](docs/private-registries.md).
 
 The repository's [corpus](corpus/) replays a credential-stealing `preinstall`

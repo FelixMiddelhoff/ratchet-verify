@@ -129,11 +129,14 @@ and keep `isolation: container`:
     NPM_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
   with:
     isolation: container
+    registry-auth: "true"
 ```
 
-`registryAuth` is set in `.ratchetrc` on your default branch (the Action has no
-input for it yet). Secrets are not available to workflows from forks; there
-the run simply cannot authenticate.
+The Action always passes `--base`, so the registry lines of `.npmrc` and any
+`registry*` options in `.ratchetrc` must already be on the base branch.
+Secrets are not available to workflows from forks; there the run simply
+cannot authenticate. The `registry-auth` input needs ratchet-verify 0.6.0 or newer (older versions
+reject the flag); the default `ratchet-version: latest` qualifies.
 
 ## What the report tells you
 

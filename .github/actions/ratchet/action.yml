@@ -26,6 +26,9 @@ inputs:
   network:
     description: 'Container mode only: "tests-offline" (default, the test phase runs with no network) or "open".'
     default: tests-offline
+  registry-auth:
+    description: 'Private registries through ratchet''s credential-holding proxy ("true" needs isolation: container). The token comes from the step''s env via ${VAR} in the base branch''s .npmrc; registry settings are read from the base ref, never from the pull request. See docs/private-registries.md.'
+    default: "false"
   ratchet-version:
     description: npm version or tag of ratchet-verify to run.
     default: latest
@@ -59,6 +62,7 @@ runs:
         RATCHET_FAIL_ON: ${{ inputs.fail-on }}
         RATCHET_ISOLATION: ${{ inputs.isolation }}
         RATCHET_NETWORK: ${{ inputs.network }}
+        RATCHET_REGISTRY_AUTH: ${{ inputs.registry-auth }}
         RATCHET_VERSION: ${{ inputs.ratchet-version }}
       run: |
         report_dir="${RUNNER_TEMP}/ratchet-report"
@@ -67,6 +71,7 @@ runs:
         extra=()
         if [ "${RATCHET_ISOLATION}" != "temp-dir" ]; then extra=(--isolation "${RATCHET_ISOLATION}"); fi
         if [ "${RATCHET_NETWORK}" != "tests-offline" ]; then extra+=(--network "${RATCHET_NETWORK}"); fi
+        if [ "${RATCHET_REGISTRY_AUTH}" = "true" ]; then extra+=(--registry-auth); fi
         npx --yes "ratchet-verify@${RATCHET_VERSION}" "${RATCHET_DIR}" \
           --base "${RATCHET_BASE}" --fail-on "${RATCHET_FAIL_ON}" --report-dir "${report_dir}" "${extra[@]}"
         code=$?
