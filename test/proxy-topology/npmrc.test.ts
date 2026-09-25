@@ -52,3 +52,49 @@ describe("rewriteNpmrc", () => {
     assert.equal(proxyRegistryUrl(PROXY, { id: "main", isDefault: true }), `${PROXY}/`);
   });
 });
+
+import { rewriteYarnrcBerry, rewriteYarnrcClassic } from "../../src/sandbox/proxy-topology/index.js";
+
+describe("rewriteYarnrcClassic", () => {
+  test("drops registry/auth/network lines, keeps the rest, appends the proxy", () => {
+    const out = rewriteYarnrcClassic(
+      [`registry "https://registry.corp.example/"`, `"@acme:registry" "https://npm.pkg.github.com/"`, `_authToken "${TOKEN}"`, `yarn-path ".yarn/releases/yarn-1.22.js"`, `# note`, `"--install.frozen-lockfile" true`].join("\n"),
+      PROXY,
+      [{ id: "main", isDefault: true }, { id: "gh", isDefault: false, scopes: ["@acme"] }],
+    );
+    assert.ok(!out.text.includes(TOKEN) && !out.text.includes("corp.example") && !out.text.includes("github.com"));
+    assert.ok(out.text.includes("yarn-path") && out.text.includes("--install.frozen-lockfile") && out.text.includes("# note"));
+    assert.ok(out.text.includes(`registry "${PROXY}/"`) && out.text.includes(`"@acme:registry" "${PROXY}/_r/gh/"`));
+    assert.deepEqual(out.dropped, ["registry", "@acme:registry", "_authtoken"]);
+  });
+});
+
+describe("rewriteYarnrcBerry", () => {
+  test("removes owned top-level keys with their blocks, keeps others, appends the proxy and whitelists its host", () => {
+    const yml = [
+      "nodeLinker: node-modules",
+      `npmRegistryServer: "https://registry.corp.example"`,
+      "npmScopes:",
+      "  acme:",
+      "    npmRegistryServer: https://npm.pkg.github.com",
+      `    npmAuthToken: ${TOKEN}`,
+      "",
+      `npmAuthToken: ${TOKEN}`,
+      "plugins:",
+      "  - path: .yarn/plugins/x.cjs",
+      "httpsProxy: http://evil.example:8080",
+      "yarnPath: .yarn/releases/yarn-4.js",
+    ].join("\n");
+    const out = rewriteYarnrcBerry(yml, PROXY, [{ id: "main", isDefault: true }, { id: "gh", isDefault: false, scopes: ["@acme"] }]);
+    assert.ok(!out.text.includes(TOKEN) && !out.text.includes("corp.example") && !out.text.includes("github.com") && !out.text.includes("evil.example"));
+    for (const keep of ["nodeLinker: node-modules", "plugins:", "  - path: .yarn/plugins/x.cjs", "yarnPath: .yarn/releases/yarn-4.js"]) assert.ok(out.text.includes(keep), keep);
+    assert.ok(out.text.includes(`npmRegistryServer: "${PROXY}/"`) && out.text.includes(`npmRegistryServer: "${PROXY}/_r/gh/"`));
+    assert.ok(out.text.includes('- "ratchet-proxy-1a2b3c4d"'));
+    assert.deepEqual(out.dropped, ["npmRegistryServer", "npmScopes", "npmAuthToken", "httpsProxy"]);
+  });
+
+  test("no project file", () => {
+    const out = rewriteYarnrcBerry(undefined, PROXY, [{ id: "m", isDefault: true }]);
+    assert.equal(out.text, `npmRegistryServer: "${PROXY}/"\nunsafeHttpWhitelist:\n  - "ratchet-proxy-1a2b3c4d"\nenableTelemetry: false\n`);
+  });
+});
