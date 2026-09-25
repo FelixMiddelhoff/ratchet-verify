@@ -54,6 +54,7 @@ export interface TopologyTimings {
   sidecarReadyMs: number;
   selfTestMs: number;
   setupMs: number;
+  /** Filled in after `fn` returns (teardown runs then): 0 while `fn` runs, final on the same object afterwards. */
   teardownMs: number;
 }
 
