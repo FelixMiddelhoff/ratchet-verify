@@ -10,6 +10,10 @@ import { parseCidr, ipv4, subnetsFromInspect } from "./subnet.js";
 export const SELFTEST_MARKER = "RATCHET_SELFTEST";
 /** Ports probed on every non-sidecar address the sandbox could conceivably reach (53 is left out: podman's gateway answers DNS by design). */
 export const SCAN_PORTS = [22, 80, 443, 2375, 3128, 8080, 9999];
+/** A scan that probed (almost) nothing proves nothing: fewer targets than this fails the self-test. */
+export const MIN_SCAN_TARGETS = 5;
+/** Addresses actually probed by the script (own and sidecar addresses are excluded from the payload's list). */
+export const MIN_SCANNED_ADDRESSES = 3;
 export const EXTERNAL_TCP = ["1.1.1.1:443", "9.9.9.9:443", "8.8.8.8:53"];
 export const EXTERNAL_NAMES = ["example.com", "registry.npmjs.org"];
 
@@ -94,6 +98,9 @@ export function judgeSelfTest(output: string): { ok: boolean; failures: string[]
   for (const r of required) if (!checks.some((c) => c.name === r)) failures.push(`${r}: check did not run`);
   if (!checks.some((c) => c.name.startsWith("noExternal ") )) failures.push("noExternal: check did not run");
   if (!checks.some((c) => c.name.startsWith("noExternalDns "))) failures.push("noExternalDns: check did not run");
+  const scan = checks.find((c) => c.name === "hostAndGatewayUnreachable");
+  const scanned = scan === undefined ? undefined : /scanned (\d+) addresses/.exec(scan.detail);
+  if (scan?.ok && (scanned === null || scanned === undefined || Number(scanned[1]) < MIN_SCANNED_ADDRESSES)) failures.push(`hostAndGatewayUnreachable: the scan probed fewer than ${MIN_SCANNED_ADDRESSES} addresses, which proves nothing`);
   return { ok: failures.length === 0, failures, checks };
 }
 
@@ -153,6 +160,9 @@ export async function runSelfTest(input: SelfTestInput): Promise<SelfTestCheck[]
   const root = mkdtempSync(join(input.tmpRoot ?? tmpdir(), "ratchet-selftest-"));
   try {
     const scan = await gatherScanTargets(input.engine, input.scanNetwork ?? input.network);
+    if (scan.length < MIN_SCAN_TARGETS) {
+      throw new ProxyTopologyError("selftest-failed", "isolation self-test could not gather enough addresses to scan", [`${scan.length} target(s), need at least ${MIN_SCAN_TARGETS}: the engine's network inspect output was not usable`]);
+    }
     const payload = JSON.stringify({ sidecar: input.sidecarName, port: input.sidecarPort, scan, ports: SCAN_PORTS, externalTcp: EXTERNAL_TCP, externalNames: EXTERNAL_NAMES });
     const args = buildRunArgs({
       settings: input.settings,

@@ -24,6 +24,8 @@ interface FakeContainer {
 }
 
 export interface FakeBehavior {
+  /** Address count the fake self-test claims to have probed (default 12). */
+  scanned?: number;
   /** Return a result to override the default answer for this command. */
   override?: (args: string[], engine: FakeEngine) => RunResult | undefined;
   /** Lines the sidecar client prints on stdout after start (default: the ready line). */
@@ -105,7 +107,7 @@ export class FakeEngine implements Engine {
     if (cmd === "run") {
       const failing = new Set(this.behavior.failingChecks ?? []);
       const omit = new Set(this.behavior.omitChecks ?? []);
-      const checks = PASSING_CHECKS.filter((c) => !omit.has(c)).map((name) => ({ name, ok: !failing.has(name), detail: failing.has(name) ? "FAILED" : "ok" }));
+      const checks = PASSING_CHECKS.filter((c) => !omit.has(c)).map((name) => ({ name, ok: !failing.has(name), detail: failing.has(name) ? "FAILED" : name === "hostAndGatewayUnreachable" ? `scanned ${this.behavior.scanned ?? 12} addresses x 7 ports; open: []` : "ok" }));
       return ok(`${SELFTEST_MARKER} ${JSON.stringify(checks)}\n`);
     }
     if (cmd === "ps") {

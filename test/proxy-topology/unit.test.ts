@@ -530,3 +530,21 @@ describe("signals", () => {
     assert.equal(listeners.size, 0);
   });
 });
+
+describe("selftest is never vacuous", () => {
+  test("a scan that probed too few addresses fails", async () => {
+    const e = new FakeEngine("docker", { scanned: 2 });
+    const err = await fails(withProxyTopology(opts(e), async () => 1));
+    assert.equal(err.code, "selftest-failed");
+    assert.ok(err.details.some((d) => d.includes("proves nothing")));
+  });
+
+  test("judgeSelfTest rejects a passing scan report that probed nothing", () => {
+    const names = ["noDefaultRoute", "noCapabilities", "noNewPrivileges", "ipRouteAddFails", "noExternal 1.1.1.1:443", "noExternalDns example.com", "sidecarResolvable", "sidecarReachable"];
+    const checks = (detail: string) => [...names.map((name) => ({ name, ok: true, detail: "ok" })), { name: "hostAndGatewayUnreachable", ok: true, detail }];
+    const line = (detail: string) => `RATCHET_SELFTEST ${JSON.stringify(checks(detail))}`;
+    assert.equal(judgeSelfTest(line("scanned 0 addresses x 7 ports; open: []")).ok, false);
+    assert.equal(judgeSelfTest(line("open: []")).ok, false);
+    assert.equal(judgeSelfTest(line("scanned 8 addresses x 7 ports; open: []")).ok, true);
+  });
+});
