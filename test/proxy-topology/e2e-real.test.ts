@@ -71,8 +71,13 @@ async function guarded(t: TestContext, body: (s: ContainerSettings, e: Engine) =
   }
 }
 
+const CASES: Array<{ manager: string; args: string[]; lock: string }> = [
+  { manager: "npm", args: ["install", "--ignore-scripts", "--no-audit", "--no-fund"], lock: "package-lock.json" },
+  { manager: "yarn", args: ["install", "--ignore-scripts", "--non-interactive"], lock: "yarn.lock" },
+];
+
 describe("package manager through the proxy on a real engine", () => {
-  test("npm install inside a sandbox container: token-protected registry, project .npmrc token stripped, credential invisible", async (t) => {
+  for (const c of CASES) test(`${c.manager} install inside a sandbox container: token-protected registry, project .npmrc token stripped, credential invisible`, async (t) => {
     await guarded(t, async (s, e) => {
       const name = `ratchet-e2e-fixture-${Math.random().toString(16).slice(2, 10)}`;
       const work = mkdtempSync(join(tmpdir(), "ratchet-e2e-"));
@@ -103,11 +108,11 @@ describe("package manager through the proxy on a real engine", () => {
         await withProxyTopology({ settings: s, config, engine: e, extraCaFile: certFile }, async (topo) => {
           const proxy = { network: topo.networkName, proxyUrl: topo.proxyUrl, registries: [{ id: "main", isDefault: true }], lockUrlMappings: [] };
           await withSandbox({ projectDir: project, container: s, proxy }, async (sb) => {
-            const install = await sb.run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], 240_000);
+            const install = await sb.run(c.manager, c.args, 240_000);
             assert.equal(install.exitCode, 0, install.output);
             assert.ok(existsSync(join(sb.dir, "node_modules", "left-pad", "index.js")), "the package was installed");
-            const lock = readFileSync(join(sb.dir, "package-lock.json"), "utf8");
-            assert.ok(lock.includes("sha512-"), "integrity recorded");
+            const lock = readFileSync(join(sb.dir, c.lock), "utf8");
+            assert.ok(/sha(512|1)-|#[0-9a-f]{40}/.test(lock), "integrity recorded");
             for (const f of [CANARY, OTHER_TOKEN, "evil.example"]) assert.ok(!lock.includes(f), `lockfile must not contain ${f}`);
             const rc = readFileSync(join(sb.dir, ".npmrc"), "utf8");
             assert.ok(!rc.includes(OTHER_TOKEN) && !rc.includes("evil.example") && rc.includes("legacy-peer-deps=true"));
