@@ -507,3 +507,26 @@ describe("sidecar lifetime", () => {
     assert.ok(MAX_LIFETIME_MS > 0 && MAX_LIFETIME_MS / 1000 < MAX_AGE_SECONDS);
   });
 });
+
+describe("signals", () => {
+  test("SIGTERM during a run tears down before exiting; listeners are removed afterwards", async () => {
+    const e = new FakeEngine("docker");
+    const listeners = new Map<string, () => void>();
+    const exits: number[] = [];
+    const signals = {
+      on: (s: string, l: () => void) => void listeners.set(s, l),
+      off: (s: string) => void listeners.delete(s),
+      exit: (c: number) => void exits.push(c),
+    };
+    await withProxyTopology(opts(e, { signals }), async () => {
+      assert.deepEqual([...listeners.keys()].sort(), ["SIGHUP", "SIGINT", "SIGTERM"]);
+      const before = e.commands.length;
+      listeners.get("SIGTERM")!();
+      await new Promise((r) => setTimeout(r, 50));
+      assert.deepEqual(exits, [143]);
+      assert.ok(e.commands.slice(before).some((c) => c.args[0] === "rm"), "containers removed");
+      assert.ok(e.commands.slice(before).some((c) => c.args[0] === "network" && c.args[1] === "rm"), "network removed");
+    });
+    assert.equal(listeners.size, 0);
+  });
+});

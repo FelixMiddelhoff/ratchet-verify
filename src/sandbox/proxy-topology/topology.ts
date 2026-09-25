@@ -48,7 +48,16 @@ export interface TopologyOptions {
   tmpRoot?: string;
   /** Cap on kept audit lines (default 10 000); beyond it lines are dropped and `auditTruncated()` turns true. */
   maxAuditEntries?: number;
+  /** Signal source and exit (default: `process`). On SIGINT/SIGTERM/SIGHUP the topology is torn down before the process exits. */
+  signals?: SignalHost;
 }
+
+export interface SignalHost {
+  on(signal: NodeJS.Signals, listener: () => void): unknown;
+  off(signal: NodeJS.Signals, listener: () => void): unknown;
+  exit(code: number): void;
+}
+const SIGNAL_EXIT: ReadonlyArray<readonly [NodeJS.Signals, number]> = [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]];
 
 export interface TopologyTimings {
   sweepMs: number;
@@ -241,12 +250,22 @@ export async function withProxyTopology<T>(options: TopologyOptions, fn: (topolo
     return await fn(topology);
   };
 
+  // A killed ratchet must not leave the credential-holding sidecar and the network behind.
+  const host: SignalHost = options.signals ?? process;
+  const handlers = SIGNAL_EXIT.map(([signal, code]) => {
+    const listener = (): void => {
+      void teardown().catch(() => undefined).finally(() => host.exit(code));
+    };
+    host.on(signal, listener);
+    return [signal, listener] as const;
+  });
   let outcome: { ok: true; value: T } | { ok: false; error: unknown };
   try {
     outcome = { ok: true, value: await body() };
   } catch (error) {
     outcome = { ok: false, error };
   }
+  for (const [signal, listener] of handlers) host.off(signal, listener);
   let problems: string[];
   try {
     problems = await teardown();
