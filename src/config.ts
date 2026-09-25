@@ -17,6 +17,12 @@ export interface Config {
   containerImage?: string;
   /** Container mode: "tests-offline" (default) runs the test phase with no network; "open" keeps it. */
   containerNetwork: "tests-offline" | "open";
+  /** Opt-in: install through a registry proxy that holds the credentials from `.npmrc`, so private registries work. Needs container isolation. */
+  registryAuth: boolean;
+  /** With registryAuth: only package names from the lockfiles (plus their dependencies, reported) pass the proxy. Turning it off is reported. */
+  registryAllowlist: boolean;
+  /** With registryAuth: extra `host[:port]` the proxy may tunnel to (CDN, binary downloads); port defaults to 443. */
+  registryAllowHosts: string[];
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -27,6 +33,9 @@ export const DEFAULT_CONFIG: Config = {
   isolation: "temp-dir",
   containerRuntime: "auto",
   containerNetwork: "tests-offline",
+  registryAuth: false,
+  registryAllowlist: true,
+  registryAllowHosts: [],
 };
 
 export const CONFIG_FILE = ".ratchetrc";
@@ -68,6 +77,11 @@ export function parseConfig(text: string): Config {
   }
   if (!["tests-offline", "open"].includes(config.containerNetwork)) {
     throw new Error(`${CONFIG_FILE}: "containerNetwork" must be "tests-offline" or "open"`);
+  }
+  if (typeof config.registryAuth !== "boolean") throw new Error(`${CONFIG_FILE}: "registryAuth" must be true or false`);
+  if (typeof config.registryAllowlist !== "boolean") throw new Error(`${CONFIG_FILE}: "registryAllowlist" must be true or false`);
+  if (!Array.isArray(config.registryAllowHosts) || config.registryAllowHosts.some((h) => typeof h !== "string" || !/^[A-Za-z0-9.-]+(:\d{1,5})?$/.test(h))) {
+    throw new Error(`${CONFIG_FILE}: "registryAllowHosts" must be an array of "host" or "host:port" strings`);
   }
   if (config.containerImage !== undefined && (typeof config.containerImage !== "string" || config.containerImage === "")) {
     throw new Error(`${CONFIG_FILE}: "containerImage" must be a non-empty image name`);

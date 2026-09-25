@@ -52,6 +52,8 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
     if (args.failOn) config.failOn = args.failOn;
     if (args.isolation) config.isolation = args.isolation;
     if (args.network) config.containerNetwork = args.network;
+    if (args.registryAuth) config.registryAuth = true;
+    if (args.registryAllowlistOff) config.registryAllowlist = false;
 
     const manager = await pickManager(args.newLockfile ?? args.oldLockfile, projectDir);
     const oldLockfile = args.oldLockfile ? await readFile(args.oldLockfile, "utf8") : await readFileAtRef(projectDir, args.base!, manager.lockfile);
