@@ -127,3 +127,13 @@ describe("rewriteLockfileUrls", () => {
     assert.equal(rewriteLockfileUrls(lock, maps).replaced, 0);
   });
 });
+
+import { allowedPackageNames } from "../../src/sandbox/proxy-topology/index.js";
+
+describe("allowedPackageNames", () => {
+  test("union of both lockfile states and manifest names, sorted, deduplicated", () => {
+    const lock = (pk: Record<string, string>) => JSON.stringify({ lockfileVersion: 3, packages: { "": {}, ...Object.fromEntries(Object.entries(pk).map(([k, v]) => [`node_modules/${k}`, { version: v }])) } });
+    const names = allowedPackageNames([lock({ a: "1.0.0", "@s/b": "1.0.0" }), lock({ a: "2.0.0", c: "1.0.0" })], ["d", "a"]);
+    assert.deepEqual(names, ["@s/b", "a", "c", "d"]);
+  });
+});

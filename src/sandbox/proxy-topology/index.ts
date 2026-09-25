@@ -9,3 +9,4 @@ export * from "./topology.js";
 export * from "./npmrc.js";
 export * from "./yarnrc.js";
 export * from "./lockurls.js";
+export * from "./allowlist.js";
