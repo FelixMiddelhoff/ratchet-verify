@@ -1,5 +1,5 @@
 import { groupVerdicts, overallLabel } from "../report/group.js";
-import { describeIsolation } from "../report/isolation.js";
+import { describeIsolation, describeRegistryProxy } from "../report/isolation.js";
 import type { DependencyVerdict, Evidence, Report } from "../report/index.js";
 
 /** Lets the action find and update its own comment instead of posting a new one per push. */
@@ -12,7 +12,10 @@ const ICON = { safe: "✅", risky: "⚠️", broken: "❌" } as const;
 export function renderMarkdown(report: Report): string {
   const lines = [COMMENT_MARKER, `## ratchet: ${ICON[report.overall]} ${overallLabel(report)}`, ""];
 
-  const isolationLine = report.isolation ? ["", `<sub>isolation: ${escapeHtml(describeIsolation(report.isolation))}</sub>`] : [];
+  const isolationLine = [
+    ...(report.isolation ? ["", `<sub>isolation: ${escapeHtml(describeIsolation(report.isolation))}</sub>`] : []),
+    ...(report.registryProxy ? ["", `<sub>registry proxy: ${escapeHtml(describeRegistryProxy(report.registryProxy))}</sub>`] : []),
+  ];
 
   if (report.verdicts.length === 0) {
     lines.push("No dependency changes to verify.", ...isolationLine);

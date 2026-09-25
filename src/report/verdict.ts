@@ -5,7 +5,7 @@ import type { IsolationInfo } from "../sandbox/index.js";
 import type { MatchResult } from "../match/index.js";
 import type { TestOutcome } from "../testrun/index.js";
 import type { UsageScan } from "../usage/index.js";
-import type { DependencyVerdict, Evidence, Report, VerdictStatus } from "./types.js";
+import type { DependencyVerdict, Evidence, RegistryProxyInfo, Report, VerdictStatus } from "./types.js";
 
 export interface DependencyAssessment {
   change: DependencyChange;
@@ -23,10 +23,10 @@ export interface DependencyAssessment {
 const OUTPUT_TAIL_LINES = 40;
 const SEVERITY: VerdictStatus[] = ["safe", "risky", "broken"];
 
-export function buildReport(assessments: DependencyAssessment[], isolation?: IsolationInfo): Report {
+export function buildReport(assessments: DependencyAssessment[], isolation?: IsolationInfo, registryProxy?: RegistryProxyInfo): Report {
   const verdicts = assessments.map(judge);
   const overall = verdicts.reduce<VerdictStatus>((worst, v) => (SEVERITY.indexOf(v.status) > SEVERITY.indexOf(worst) ? v.status : worst), "safe");
-  return isolation ? { schemaVersion: 1, overall, isolation, verdicts } : { schemaVersion: 1, overall, verdicts };
+  return { schemaVersion: 1, overall, ...(isolation ? { isolation } : {}), ...(registryProxy ? { registryProxy } : {}), verdicts };
 }
 
 /**

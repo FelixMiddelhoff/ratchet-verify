@@ -267,3 +267,28 @@ test("last-good suggestion: absent when narrowed, flaky, unconfirmed, not bisect
     for (const out of [renderText(report), renderMarkdown(report), renderSarif(report)]) assert.doesNotMatch(out, /last known good/);
   }
 });
+
+import { describeRegistryProxy } from "../src/report/index.js";
+import { renderMarkdown } from "../src/ci/comment.js";
+
+test("registry proxy disclosure: text footer, markdown footer, JSON field; no credential value", () => {
+  const info = {
+    registries: [{ id: "main", host: "npm.corp.example", credential: "bearer" as const }, { id: "r1", host: "npm.pkg.github.com", credential: "none" as const, scopes: ["@acme"] }],
+    allowlist: "on" as const,
+    allowHosts: ["cdn.example.com:443"],
+    allowedPackages: 12,
+    discoveredPackages: ["gamma"],
+    requestsAllowed: 40,
+    requestsDenied: 2,
+    auditTruncated: false,
+  };
+  const report = buildReport([], { level: "container", runtime: "podman", image: "node:24" }, info);
+  assert.deepEqual(report.registryProxy, info);
+  const text = renderText(report);
+  assert.match(text, /registry proxy: via proxy, credentials never entered the sandbox: npm\.corp\.example \(bearer credential held by the proxy\), npm\.pkg\.github\.com \(no credential, @acme\)/);
+  assert.match(text, /package allowlist on \(12 names\).*extra hosts: cdn\.example\.com:443.*discovered dependencies: gamma.*40 requests allowed, 2 denied/);
+  assert.match(renderMarkdown(report), /<sub>registry proxy: via proxy/);
+  assert.match(describeRegistryProxy({ ...info, allowlist: "off", auditTruncated: true }), /package allowlist OFF.*audit truncated/);
+  assert.equal(buildReport([], { level: "temp-dir" }).registryProxy, undefined);
+  assert.ok(!("registryProxy" in buildReport([], { level: "temp-dir" })));
+});

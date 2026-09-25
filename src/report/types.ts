@@ -57,10 +57,28 @@ export interface DependencyVerdict {
   notes: string[];
 }
 
+/** What the registry proxy did during a run (opt-in `registryAuth`): shown with every report so the credential handling is auditable. */
+export interface RegistryProxyInfo {
+  registries: Array<{ id: string; host: string; credential: "bearer" | "basic" | "none"; scopes?: string[] }>;
+  /** "off" = the package-name allowlist was disabled by the user. */
+  allowlist: "on" | "off";
+  /** Extra `host:port` the proxy may tunnel to (binary downloads, CDN). */
+  allowHosts: string[];
+  allowedPackages: number;
+  /** Names let through only because an allowed package depends on them (bisected versions bring new dependencies). */
+  discoveredPackages: string[];
+  requestsAllowed: number;
+  requestsDenied: number;
+  /** The audit was cut at its cap: the counts and discovered names are a lower bound. */
+  auditTruncated: boolean;
+}
+
 export interface Report {
   schemaVersion: 1;
   overall: VerdictStatus;
   /** How the installs and tests were isolated; absent when nothing was run. */
   isolation?: IsolationInfo;
+  /** Present only when the run used the registry proxy. */
+  registryProxy?: RegistryProxyInfo;
   verdicts: DependencyVerdict[];
 }
