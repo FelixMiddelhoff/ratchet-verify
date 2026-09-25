@@ -309,13 +309,13 @@ describe("proxy topology on a real engine", () => {
         assert.ok(orphan.containers !== "" && orphan.networks !== "", "kill -9 leaves the sidecar and the network behind (the reason the sweep exists)");
         const running = (await e.run(["ps", "-q", "--filter", `label=ratchet.run=${runId}`])).output.trim();
         assert.ok(running !== "", "the sidecar is still running");
-        const swept = await sweepStale(e);
+        const swept = await sweepStale(e, { nowSeconds: Math.floor(Date.now() / 1000) + 11 * 60 });
         assert.equal(swept.problems.length, 0, swept.problems.join("; "));
         assert.ok(swept.removedNetworks.length >= 1);
         assert.deepEqual(await labelled(e, runId), { containers: "", networks: "" });
       } finally {
         if (child.exitCode === null) child.kill("SIGKILL");
-        if (runId) await sweepStale(e);
+        if (runId) await sweepStale(e, { nowSeconds: Math.floor(Date.now() / 1000) + 11 * 60 });
       }
     });
   });
