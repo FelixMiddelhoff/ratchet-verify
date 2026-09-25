@@ -58,7 +58,8 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
     const config = await loadConfig(projectDir);
     // Credentials follow the base ref's registry settings, not the checkout under test (see trusted.ts).
     let projectNpmrc: { text: string | undefined } | undefined;
-    if (args.base) {
+    // Only needed when something asks for the proxy: a checkout that turns it off can never send a credential anywhere.
+    if (args.base && (config.registryAuth || args.registryAuth)) {
       const trusted = await applyTrustedRegistryConfig(config, args.base, { list: () => listFilesAtRef(projectDir, args.base!), read: (p) => readFileAtRef(projectDir, args.base!, p) });
       for (const note of trusted.notes) io.err(`ratchet: ${note}`);
       projectNpmrc = { text: trusted.npmrc };
