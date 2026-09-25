@@ -118,6 +118,10 @@ export interface RunArgsInput {
   network?: string;
 }
 
+const NETWORK_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
+/** Engine network modes that are not a user network: `host` would hand the sandbox the host's stack. */
+const RESERVED_NETWORKS = new Set(["host", "bridge", "none", "default", "private", "pasta", "slirp4netns", "container", "ns"]);
+
 /**
  * `docker|podman run` arguments. Filesystem: one bind mount, nothing else from the host.
  * Privileges: all capabilities dropped, no privilege escalation, bounded process count.
@@ -125,6 +129,9 @@ export interface RunArgsInput {
 export function buildRunArgs(input: RunArgsInput): string[] {
   const { settings, root } = input;
   if (input.network !== undefined && input.offline) throw new Error("buildRunArgs: network and offline are mutually exclusive");
+  if (input.network !== undefined && (!NETWORK_NAME_RE.test(input.network) || RESERVED_NETWORKS.has(input.network.toLowerCase()))) {
+    throw new Error(`buildRunArgs: refusing network ${JSON.stringify(input.network)}: it must be a plain user-network name, not an option or an engine network mode`);
+  }
   if (root.includes(",")) throw new Error(`sandbox path contains a comma, which container mounts cannot express: ${root}`);
   const relabel = settings.runtime === "podman" ? ",relabel=private" : ""; // SELinux hosts need it for bind mounts
   const env = Object.entries(buildContainerEnv()).flatMap(([key, value]) => ["-e", `${key}=${value}`]);

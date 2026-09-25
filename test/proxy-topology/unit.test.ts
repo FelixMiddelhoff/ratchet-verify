@@ -490,3 +490,12 @@ describe("sidecar mounts", () => {
     assert.deepEqual(mounts("docker"), ["type=bind,source=/d,target=/proxy,readonly", "type=bind,source=/ca.pem,target=/ca/ca.pem,readonly"]);
   });
 });
+
+describe("sandbox network argument", () => {
+  test("only plain user-network names are accepted", () => {
+    const settings = { runtime: "docker", image: "node:24" } as ContainerSettings;
+    const args = (network: string) => buildRunArgs({ settings, root: "/r", name: "n", command: "true", args: [], user: "1:1", network });
+    assert.ok(args("ratchet-net-aabbccdd").includes("ratchet-net-aabbccdd"));
+    for (const bad of ["host", "HOST", "none", "bridge", "container:abc", "--privileged", "-x", "a b", "", "net,x"]) assert.throws(() => args(bad), /refusing network/, bad);
+  });
+});
