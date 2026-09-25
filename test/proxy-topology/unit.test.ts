@@ -322,6 +322,17 @@ describe("proxy-topology teardown and failure mapping", () => {
       assert.deepEqual(t.discoveredNames(), ["dep-a"]);
       assert.equal(t.audit().length, 3);
       assert.deepEqual(t.diagnostics(), ["audit sink dropped 3 lines"]);
+      assert.equal(t.auditTruncated(), false);
+    });
+  });
+
+  test("audit beyond the cap is dropped and flagged", async () => {
+    const line = JSON.stringify({ decision: "allow", class: "packument", reason: "ok", name: "x" });
+    const e = new FakeEngine("podman", { stderrLines: [line, line, line] });
+    await withProxyTopology({ ...opts(e), maxAuditEntries: 2 }, async (t) => {
+      await new Promise((r) => setTimeout(r, 30));
+      assert.equal(t.audit().length, 2);
+      assert.equal(t.auditTruncated(), true);
     });
   });
 });

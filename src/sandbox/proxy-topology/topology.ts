@@ -46,6 +46,8 @@ export interface TopologyOptions {
   runId?: string;
   random?: () => number;
   tmpRoot?: string;
+  /** Cap on kept audit lines (default 10 000); beyond it lines are dropped and `auditTruncated()` turns true. */
+  maxAuditEntries?: number;
 }
 
 export interface TopologyTimings {
@@ -68,6 +70,8 @@ export interface ProxyTopology {
   runId: string;
   /** The proxy's audit lines, read from the sidecar client's stderr (never over the network). Redacted. */
   audit(): AuditEntry[];
+  /** True when audit lines were dropped at the cap: the audit (and discovery) is then incomplete. */
+  auditTruncated(): boolean;
   /** Names auto-allowed by `discovery: "audit"`. */
   discoveredNames(): string[];
   /** Non-JSON stderr lines (drop counters, crash line). Redacted. */
@@ -108,6 +112,8 @@ export async function withProxyTopology<T>(options: TopologyOptions, fn: (topolo
   let client: AttachedProcess | undefined;
   const audit: AuditEntry[] = [];
   const diagnostics: string[] = [];
+  const maxAudit = options.maxAuditEntries ?? MAX_KEPT_LINES;
+  let auditTruncated = false;
   const t0 = now();
 
   const run = (args: string[], timeoutMs = timeouts.commandMs) => engine.run(args, { timeoutMs });
@@ -174,7 +180,8 @@ export async function withProxyTopology<T>(options: TopologyOptions, fn: (topolo
       stderrText = `${stderrText}${line}\n`.slice(-4000);
       const entry = parseAuditLine(line);
       if (entry) {
-        if (audit.length < MAX_KEPT_LINES) audit.push(entry);
+        if (audit.length < maxAudit) audit.push(entry);
+        else auditTruncated = true;
       } else if (diagnostics.length < 1000) diagnostics.push(line.slice(0, 500));
     });
     const exitedEarly = client.exited.then((code) => code);
@@ -225,6 +232,7 @@ export async function withProxyTopology<T>(options: TopologyOptions, fn: (topolo
       sidecarName,
       runId,
       audit: () => audit.slice(),
+      auditTruncated: () => auditTruncated,
       discoveredNames: () => [...new Set(audit.filter((e) => e.reason === "discovered" && e.name !== null).map((e) => e.name as string))],
       diagnostics: () => diagnostics.slice(),
       selfTest: checks,
