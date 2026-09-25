@@ -46,9 +46,9 @@ const nerf = (url: URL): string => `//${url.host}${url.pathname.endsWith("/") ? 
  * Turns the user's npm configuration into proxy registries and credentials. `layers` are `.npmrc` texts, the highest precedence
  * first (project file, then user file); only registries and their auth are read, nothing else is forwarded anywhere. Auth is matched
  * npm-style by the longest `//host/path/` prefix. Supported: `_authToken` (bearer), `_auth` (basic, base64 `user:pass`),
- * `username` + `_password` (basic, base64 password). A `${VAR}` that is unset is an error naming the variable, never an empty token.
+ * `username` + `_password` (basic, base64 password). `privateHosts` are the registry host names that may resolve to private addresses. A `${VAR}` that is unset is an error naming the variable, never an empty token.
  */
-export function sourceRegistries(layers: readonly string[], env: Readonly<Record<string, string | undefined>>): SourcedRegistries {
+export function sourceRegistries(layers: readonly string[], env: Readonly<Record<string, string | undefined>>, privateHosts: readonly string[] = []): SourcedRegistries {
   const merged = new Map<string, string>();
   for (const layer of [...layers].reverse()) for (const [k, v] of parseNpmrc(layer)) merged.set(k, v);
   const missing = new Set<string>();
@@ -93,7 +93,7 @@ export function sourceRegistries(layers: readonly string[], env: Readonly<Record
     const id = r.isDefault ? "main" : `r${i}`;
     const pathPrefix = r.url.pathname.replace(/\/+$/, "");
     const credential = credentialFor(r.url, merged, get);
-    registries.push({ id, upstream: r.url.origin, ...(pathPrefix !== "" ? { pathPrefix } : {}), isDefault: r.isDefault, ...(credential ? { credential } : {}) });
+    registries.push({ id, upstream: r.url.origin, ...(pathPrefix !== "" ? { pathPrefix } : {}), isDefault: r.isDefault, ...(privateHosts.includes(r.url.hostname) ? { allowPrivateAddresses: true } : {}), ...(credential ? { credential } : {}) });
     client.push({ id, isDefault: r.isDefault, ...(r.scopes.length > 0 ? { scopes: r.scopes } : {}) });
     upstreamPrefixes.push({ id, prefix: `${r.url.origin}${pathPrefix}/` });
     notes.push(`${id}: ${r.url.origin}${pathPrefix}/ (${credential ? `${credential.type} credential from .npmrc` : "no credential"})${r.scopes.length ? `, scopes ${r.scopes.join(", ")}` : ""}`);

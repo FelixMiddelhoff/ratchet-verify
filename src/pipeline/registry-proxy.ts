@@ -51,7 +51,7 @@ export async function withRegistryProxy<T>(options: RegistryProxyOptions, fn: (r
   }
   const userRc = options.env.NPM_CONFIG_USERCONFIG ?? join(options.homeDir ?? homedir(), ".npmrc");
   const layers = [await readIfExists(join(options.projectDir, ".npmrc")), await readIfExists(userRc)].filter((t): t is string => t !== undefined);
-  const sourced = sourceRegistries(layers, options.env);
+  const sourced = sourceRegistries(layers, options.env, config.registryPrivateHosts);
   const allowlistOn = config.registryAllowlist;
   const names = allowedPackageNames(options.lockfiles, options.manifestNames);
   const built = buildProxyConfig({

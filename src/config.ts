@@ -26,6 +26,8 @@ export interface Config {
   registryAllowHosts: string[];
   /** With registryAuth: resolver IPs the proxy uses for registry host names (it never uses the system resolver); set your corporate DNS for internal registries. */
   registryDns: string[];
+  /** With registryAuth: registry hosts that may resolve to private addresses (an internal Artifactory on 10.x). Everything else is refused by the proxy's SSRF guard. */
+  registryPrivateHosts: string[];
   /** With registryAuth: extra CA bundle (PEM file) the proxy trusts for registries with a corporate certificate. */
   registryCaFile?: string;
 }
@@ -42,6 +44,7 @@ export const DEFAULT_CONFIG: Config = {
   registryAllowlist: true,
   registryAllowHosts: [],
   registryDns: ["1.1.1.1", "9.9.9.9"],
+  registryPrivateHosts: [],
 };
 
 export const CONFIG_FILE = ".ratchetrc";
@@ -91,6 +94,9 @@ export function parseConfig(text: string): Config {
   }
   if (!Array.isArray(config.registryDns) || config.registryDns.length === 0 || config.registryDns.some((d) => typeof d !== "string" || isIP(d) === 0)) {
     throw new Error(`${CONFIG_FILE}: "registryDns" must be a non-empty array of IP addresses`);
+  }
+  if (!Array.isArray(config.registryPrivateHosts) || config.registryPrivateHosts.some((h) => typeof h !== "string" || !/^[A-Za-z0-9.-]+$/.test(h))) {
+    throw new Error(`${CONFIG_FILE}: "registryPrivateHosts" must be an array of host names (no port, no scheme)`);
   }
   if (config.registryCaFile !== undefined && (typeof config.registryCaFile !== "string" || config.registryCaFile === "")) {
     throw new Error(`${CONFIG_FILE}: "registryCaFile" must be a path`);

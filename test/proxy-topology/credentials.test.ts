@@ -50,4 +50,9 @@ describe("sourceRegistries", () => {
     assert.equal(r.registries.length, 1);
     assert.deepEqual(r.client, [{ id: "main", isDefault: true, scopes: ["@x"] }]);
   });
+
+  test("privateHosts opt one registry host into private addresses, others stay guarded", () => {
+    const r = sourceRegistries(["registry=https://10.0.0.5/\n@x:registry=https://other.example/"], {}, ["10.0.0.5"]);
+    assert.deepEqual(r.registries.map((x) => [x.upstream, x.allowPrivateAddresses]), [["https://10.0.0.5", true], ["https://other.example", undefined]]);
+  });
 });
