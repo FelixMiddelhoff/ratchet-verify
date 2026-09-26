@@ -11,7 +11,7 @@ import type { SandboxProxy } from "../sandbox/proxy-client.js";
 import type { RegistryProxyInfo } from "../report/index.js";
 import { applyTrustedRegistryConfig } from "./trusted.js";
 import { withRegistryProxy } from "../pipeline/registry-proxy.js";
-import { resolveIsolation, type ResolvedIsolation } from "../sandbox/index.js";
+import { ensureManagerInImage, resolveIsolation, type ResolvedIsolation } from "../sandbox/index.js";
 import { renderJson, renderSarif, renderText, type Report } from "../report/index.js";
 import { parseCliArgs, USAGE, type OutputFormat } from "./args.js";
 import { listFilesAtRef, readFileAtRef } from "./git.js";
@@ -84,6 +84,7 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
 
     const isolation = await resolveIsolation({ mode: config.isolation, runtime: config.containerRuntime, image: config.containerImage, network: config.containerNetwork });
     for (const note of isolation.notes) io.err(`ratchet: ${note}`);
+    if (isolation.container) await ensureManagerInImage(isolation.container, manager.name);
 
     if (workspaces.length > 0) io.err(`ratchet: workspace project (${workspaces.length} packages); tests run via the root scripts.test only`);
     const manifestNames = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"].flatMap((k) => Object.keys((manifest[k] as Record<string, string> | undefined) ?? {}));

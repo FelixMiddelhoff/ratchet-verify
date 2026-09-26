@@ -9,6 +9,8 @@
 [![help wanted](https://img.shields.io/github/issues/FelixMiddelhoff/ratchet-verify/help%20wanted?label=help%20wanted&color=blue)](https://github.com/FelixMiddelhoff/ratchet-verify/labels/help%20wanted)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](#help-wanted)
 
+> Hey guys, i'm still working on improving this and getting it nearer towards the finish line, please have some patience :) <br>Also, if you tried it could you please tell me how it works for you?
+
 *Don't just bump the version — prove it still works.*
 
 Dependabot and Renovate open a pull request when a new version exists. That is

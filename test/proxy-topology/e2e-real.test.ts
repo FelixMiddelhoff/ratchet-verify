@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { before, describe, test, type TestContext } from "node:test";
@@ -45,18 +46,59 @@ async function guarded(t: TestContext, body: (s: ContainerSettings, e: Engine) =
   }
 }
 
-const CASES: Array<{ manager: string; args: string[]; lock: string }> = [
-  { manager: "npm", args: ["install", "--ignore-scripts", "--no-audit", "--no-fund"], lock: "package-lock.json" },
-  { manager: "yarn", args: ["install", "--ignore-scripts", "--non-interactive"], lock: "yarn.lock" },
+interface ManagerCase {
+  manager: string;
+  label: string;
+  args: string[];
+  frozen?: string[];
+  lock: string;
+  /** Derived image with the manager (the stock node:24 ships npm and yarn 1 only). */
+  image?: { tag: string; run: string };
+  /** Extra project files (berry: the release its .yarnrc.yml pins by yarnPath). */
+  prepare?: (project: string, work: string) => Promise<void>;
+  /** The lockfile records the registry origin, so the second (frozen, upstream-URL) phase is required to see the proxy rewrite. */
+  recordsUrl: boolean;
+}
+
+/** Berry is run by the image's yarn 1 through yarnPath: fetch that release on the host (the sandbox has no direct network). */
+async function prepareBerry(project: string, work: string): Promise<void> {
+  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+  const packed = spawnSync(npm, ["pack", "@yarnpkg/cli-dist@4.9.2", "--pack-destination", work], { encoding: "utf8", shell: process.platform === "win32" });
+  assert.equal(packed.status, 0, packed.stderr);
+  const unpack = join(work, "berry-unpack");
+  mkdirSync(unpack);
+  const tar = spawnSync("tar", ["-xzf", "yarnpkg-cli-dist-4.9.2.tgz", "-C", "berry-unpack"], { cwd: work, encoding: "utf8" }); // relative paths: GNU tar reads "C:" as a host
+  assert.equal(tar.status, 0, tar.stderr);
+  mkdirSync(join(project, ".yarn", "releases"), { recursive: true });
+  copyFileSync(join(unpack, "package", "bin", "yarn.js"), join(project, ".yarn", "releases", "yarn-4.9.2.cjs"));
+  // A berry lockfile marker: the sandbox rewrites .yarnrc.yml (registry -> proxy) only for a yarn.lock it recognises as berry.
+  writeFileSync(join(project, "yarn.lock"), ["__metadata:", "  version: 8", ""].join("\n"));
+  writeFileSync(join(project, ".yarnrc.yml"), ["nodeLinker: node-modules", "enableTelemetry: false", "yarnPath: .yarn/releases/yarn-4.9.2.cjs", ""].join("\n"));
+}
+
+async function buildImage(runtime: string, tag: string, run: string, work: string): Promise<string> {
+  const dir = mkdtempSync(join(work, "image-"));
+  writeFileSync(join(dir, "Dockerfile"), ["FROM node:24", `RUN ${run}`, ""].join("\n"));
+  const built = spawnSync(runtime, ["build", "-t", tag, dir], { encoding: "utf8" });
+  assert.equal(built.status, 0, built.stderr + built.stdout);
+  return tag;
+}
+
+const CASES: ManagerCase[] = [
+  { manager: "npm", label: "npm", args: ["install", "--ignore-scripts", "--no-audit", "--no-fund"], lock: "package-lock.json", recordsUrl: false },
+  { manager: "yarn", label: "yarn", args: ["install", "--ignore-scripts", "--non-interactive"], frozen: ["install", "--frozen-lockfile", "--ignore-scripts", "--non-interactive"], lock: "yarn.lock", recordsUrl: true },
+  { manager: "pnpm", label: "pnpm 9", args: ["install", "--ignore-scripts"], frozen: ["install", "--frozen-lockfile", "--ignore-scripts"], lock: "pnpm-lock.yaml", image: { tag: "ratchet-test-pnpm9", run: "npm install -g pnpm@9" }, recordsUrl: false },
+  { manager: "yarn", label: "yarn berry 4", args: ["install", "--mode=skip-build"], frozen: ["install", "--immutable", "--mode=skip-build"], lock: "yarn.lock", prepare: prepareBerry, recordsUrl: false },
 ];
 
 describe("package manager through the proxy on a real engine", () => {
-  for (const c of CASES) test(`${c.manager} install inside a sandbox container: token-protected registry, project .npmrc token stripped, credential invisible`, async (t) => {
-    await guarded(t, async (s, e) => {
+  for (const c of CASES) test(`${c.label} install inside a sandbox container: token-protected registry, project .npmrc token stripped, credential invisible`, async (t) => {
+    await guarded(t, async (base, e) => {
       const name = `ratchet-e2e-fixture-${Math.random().toString(16).slice(2, 10)}`;
       const work = mkdtempSync(join(tmpdir(), "ratchet-e2e-"));
       try {
-        const run = await e.run(["run", "-d", "--name", name, "--network", defaultBridge(s.runtime), "--label", "ratchet.test=fixture", s.image, "node", "-e", FIXTURE_JS]);
+        const s = c.image ? { ...base, image: await buildImage(base.runtime, c.image.tag, c.image.run, work) } : base;
+        const run = await e.run(["run", "-d", "--name", name, "--network", defaultBridge(s.runtime), "--label", "ratchet.test=fixture", base.image, "node", "-e", FIXTURE_JS]);
         assert.equal(run.exitCode, 0, run.output);
         let text = "";
         for (let i = 0; i < 100 && !text.includes("FIXTURE_READY"); i++) {
@@ -72,6 +114,7 @@ describe("package manager through the proxy on a real engine", () => {
         mkdirSync(project);
         writeFileSync(join(project, "package.json"), JSON.stringify({ name: "app", version: "1.0.0", dependencies: { "left-pad": "1.0.0" } }));
         writeFileSync(join(project, ".npmrc"), `registry=https://evil.example/\n//evil.example/:_authToken=${OTHER_TOKEN}\nlegacy-peer-deps=true\n`);
+        await c.prepare?.(project, work);
 
         const config = buildProxyConfig({
           registries: [{ id: "main", upstream: `https://${ip}:8443`, allowPrivateAddresses: true, credential: new Credential("bearer", CANARY) }],
@@ -87,19 +130,20 @@ describe("package manager through the proxy on a real engine", () => {
             assert.equal(install.exitCode, 0, install.output);
             assert.ok(existsSync(join(sb.dir, "node_modules", "left-pad", "index.js")), "the package was installed");
             const lock = readFileSync(join(sb.dir, c.lock), "utf8");
-            assert.ok(/sha(512|1)-|#[0-9a-f]{40}/.test(lock), "integrity recorded");
+            assert.ok(/sha(512|1)-|#[0-9a-f]{40}|checksum: [0-9a-z]+\/[0-9a-f]{32,}/.test(lock), "integrity recorded");
             for (const f of [CANARY, OTHER_TOKEN, "evil.example"]) assert.ok(!lock.includes(f), `lockfile must not contain ${f}`);
             const rc = readFileSync(join(sb.dir, ".npmrc"), "utf8");
             assert.ok(!rc.includes(OTHER_TOKEN) && !rc.includes("evil.example") && rc.includes("legacy-peer-deps=true"));
+            if (c.prepare) for (const f of [CANARY, OTHER_TOKEN, "evil.example"]) assert.ok(!readFileSync(join(sb.dir, ".yarnrc.yml"), "utf8").includes(f), `.yarnrc.yml must not contain ${f}`);
             lockText = lock;
           });
-          if (c.manager === "yarn") {
+          if (c.frozen) {
             // A lockfile that records the UPSTREAM url (what a developer's machine wrote): the sandbox copy is pointed at the proxy.
             const upstreamLock = lockText.split(topo.proxyUrl).join(`https://${ip}:8443`);
-            assert.ok(upstreamLock.includes(`https://${ip}:8443/left-pad`), upstreamLock);
+            if (c.recordsUrl) assert.ok(upstreamLock.includes(`https://${ip}:8443/left-pad`), upstreamLock);
             const mappings = [{ from: `https://${ip}:8443/`, to: `${topo.proxyUrl}/` }];
-            await withSandbox({ projectDir: project, container: s, proxy: { ...proxy, lockUrlMappings: mappings }, lockfile: { name: "yarn.lock", content: upstreamLock } }, async (sb) => {
-              const frozen = await sb.run("yarn", ["install", "--frozen-lockfile", "--ignore-scripts", "--non-interactive"], 240_000);
+            await withSandbox({ projectDir: project, container: s, proxy: { ...proxy, lockUrlMappings: mappings }, lockfile: { name: c.lock, content: upstreamLock } }, async (sb) => {
+              const frozen = await sb.run(c.manager, c.frozen!, 240_000);
               assert.equal(frozen.exitCode, 0, frozen.output);
               assert.ok(existsSync(join(sb.dir, "node_modules", "left-pad", "index.js")));
             });
@@ -115,7 +159,7 @@ describe("package manager through the proxy on a real engine", () => {
           for (const form of secretForms(CANARY)) assert.ok(!JSON.stringify([audit, topo.diagnostics()]).includes(form));
         });
       } finally {
-        await e.run(s.runtime === "podman" ? ["rm", "-f", "-t", "0", name] : ["rm", "-f", name]);
+        await e.run(base.runtime === "podman" ? ["rm", "-f", "-t", "0", name] : ["rm", "-f", name]);
         rmSync(work, { recursive: true, force: true });
       }
     });

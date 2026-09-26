@@ -8,9 +8,8 @@ look for it. Instead it runs a small **registry proxy** that holds the
 credential, and the sandbox can only talk to the proxy.
 
 This feature is **opt-in** and off by default. It needs container isolation
-(docker or podman running Linux containers). It supports npm and yarn classic
-in real runs; yarn berry and pnpm are wired the same way but have not been run
-against a real registry yet (see [Limits](#limits)).
+(docker or podman running Linux containers). It is verified in real runs with npm,
+yarn classic, yarn berry 4 and pnpm 9 (see [Limits](#limits)).
 
 ## How it works
 
@@ -174,10 +173,11 @@ Be honest about what this does and does not give you.
 - The report and PR comment **name your private registry hosts**. On a public
   repository that is public information.
 - The sandbox image must contain the package manager. The default `node`
-  image has npm and yarn classic. yarn berry and pnpm are configured the same
-  way but were **not run against a real registry**; pnpm and berry normally
-  need a download (corepack) that the sandbox cannot do, so use an image that
-  ships them.
+  image has npm and yarn classic (which runs a berry release pinned by
+  `yarnPath`). pnpm is not in it: ratchet stops before running anything and
+  says so; see "Images for pnpm and yarn" in [configuration](configuration.md#images-for-pnpm-and-yarn).
+  Berry through the proxy is tested with a `yarnPath` release; berry via
+  corepack needs a download the sandbox cannot do.
 - Only the root `.npmrc` / `.yarnrc` / `.yarnrc.yml` are rewritten, not files
   in workspace subdirectories. yarn's own credential settings
   (`npmAuthToken` in `.yarnrc.yml`) are not read as a credential source; use

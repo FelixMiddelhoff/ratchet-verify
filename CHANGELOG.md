@@ -5,6 +5,10 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+### Added
+- Container mode checks that the image ships the project's package manager and stops with a clear error and the fix (`containerImage`) instead of failing every candidate as "install failed". The stock `node:24` image has no pnpm; docs show a two-line image (`docs/configuration.md`, "Images for pnpm and yarn").
+- Verified on real podman (CI runs the same): pnpm 9 and yarn berry 4 (via `yarnPath`) install, test and pin single dependencies in a container, and install through the private-registry proxy (frozen install from an upstream-URL lockfile included).
+
 ## [0.6.0] - 2026-09-25
 
 ### Added

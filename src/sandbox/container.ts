@@ -82,6 +82,21 @@ export async function ensureImage(settings: ContainerSettings, exec: Exec = runC
 }
 
 /**
+ * Fails early, with the fix, when the image lacks the package manager the project needs
+ * (node:24 ships npm and yarn 1 but not pnpm; without this the run dies as "install failed" per candidate).
+ */
+export async function ensureManagerInImage(settings: ContainerSettings, manager: string, exec: Exec = runCommand): Promise<void> {
+  if (!/^[a-z]+$/.test(manager)) throw new Error(`invalid package manager name ${JSON.stringify(manager)}`);
+  const found = await probe(settings.runtime, ["run", "--rm", "--entrypoint", "sh", settings.image, "-c", `command -v ${manager}`], exec);
+  if (found.exitCode === 0) return;
+  throw new Error(
+    `container image ${settings.image} does not ship ${manager}, which this project's lockfile needs. ` +
+      `Use an image that has it (set containerImage in .ratchetrc or the action's isolation image; see docs/configuration.md, "Images for pnpm and yarn"), ` +
+      `or pass --isolation temp-dir to accept weaker isolation.`,
+  );
+}
+
+/**
  * Environment inside the container: only redirected locations and npm switches. Nothing is
  * inherited from the host (the host's PATH, tokens and paths mean nothing there).
  */
