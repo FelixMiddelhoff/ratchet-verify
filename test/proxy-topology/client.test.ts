@@ -53,6 +53,31 @@ describe("applyProxyClient", () => {
     });
   });
 
+  test("workspace rc files (any depth, not node_modules) are rewritten too, a token there never survives", async () => {
+    await inProject(
+      {
+        "package.json": "{}",
+        "packages/a/.npmrc": `//priv.example/:_authToken=${TOKEN}
+registry=https://priv.example/
+legacy-peer-deps=true
+`,
+        "packages/deep/b/.yarnrc.yml": `npmAuthToken: ${TOKEN}
+nodeLinker: node-modules
+`,
+        "node_modules/x/.npmrc": `//priv.example/:_authToken=${TOKEN}
+`,
+      },
+      async (dir) => {
+        await applyProxyClient(dir, proxy, "package-lock.json");
+        const a = readFileSync(join(dir, "packages", "a", ".npmrc"), "utf8");
+        assert.ok(!a.includes(TOKEN) && !a.includes("priv.example") && a.includes("legacy-peer-deps=true"));
+        const b = readFileSync(join(dir, "packages", "deep", "b", ".yarnrc.yml"), "utf8");
+        assert.ok(!b.includes(TOKEN) && b.includes("nodeLinker: node-modules"));
+        assert.ok(readFileSync(join(dir, "node_modules", "x", ".npmrc"), "utf8").includes(TOKEN), "node_modules is not walked");
+      },
+    );
+  });
+
   test("yarn berry: .yarnrc.yml written", async () => {
     await inProject({ ".yarnrc.yml": `npmAuthToken: ${TOKEN}\nnodeLinker: node-modules\n`, "yarn.lock": `__metadata:\n  version: 8\n` }, async (dir) => {
       await applyProxyClient(dir, proxy, "yarn.lock");

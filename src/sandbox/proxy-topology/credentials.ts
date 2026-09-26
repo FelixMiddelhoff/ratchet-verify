@@ -124,3 +124,62 @@ function credentialFor(url: URL, merged: ReadonlyMap<string, string>, get: (k: s
   }
   return undefined;
 }
+
+const unquote = (v: string): string => v.trim().replace(/^(["'])(.*)\1$/, "$2");
+
+/** Origin+path of a registry setting as a nerf-dart (`//host/path/`); yarn writes both `https://host/path` and `//host/path`. */
+function yarnNerf(raw: string): string {
+  const bare = unquote(raw).replace(/^https?:/, "");
+  return bare.endsWith("/") ? bare : `${bare}/`;
+}
+
+/**
+ * Yarn berry's registry settings from a `.yarnrc.yml`, expressed as `.npmrc` lines so `sourceRegistries` reads one format:
+ * `npmRegistryServer`, `npmAuthToken`, `npmAuthIdent`, `npmScopes.<scope>.{npmRegistryServer,npmAuthToken,npmAuthIdent}` and
+ * `npmRegistries.<url>.{npmAuthToken,npmAuthIdent}`. Only these keys are read (a minimal indentation reader, no YAML library);
+ * everything else in the file is ignored. Values keep their `${VAR}` references for `sourceRegistries` to expand or reject.
+ */
+export function yarnrcToNpmrc(text: string): string {
+  type Block = { server?: string; token?: string; ident?: string };
+  const top: Block = {};
+  const scopes = new Map<string, Block>();
+  const registries = new Map<string, Block>();
+  const stack: Array<{ indent: number; key: string }> = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim() === "" || line.trim().startsWith("#")) continue;
+    const indent = line.length - line.trimStart().length;
+    const m = /^(\s*)("[^"]*"|'[^']*'|[^:\s][^:]*?)\s*:(?:\s+(.*))?$/.exec(line);
+    if (!m) continue;
+    while (stack.length > 0 && stack[stack.length - 1]!.indent >= indent) stack.pop();
+    const key = unquote(m[2]!);
+    const value = m[3] === undefined ? undefined : unquote(m[3].replace(/\s+#.*$/, ""));
+    if (value === undefined || value === "") {
+      stack.push({ indent, key });
+      continue;
+    }
+    const path = [...stack.map((s) => s.key), key];
+    const target = (b: Block, leaf: string): void => {
+      if (leaf === "npmRegistryServer") b.server = value;
+      else if (leaf === "npmAuthToken") b.token = value;
+      else if (leaf === "npmAuthIdent") b.ident = value;
+    };
+    if (path.length === 1) target(top, path[0]!);
+    else if (path.length === 3 && path[0] === "npmScopes") target(scopes.get(path[1]!) ?? scopes.set(path[1]!, {}).get(path[1]!)!, path[2]!);
+    else if (path.length === 3 && path[0] === "npmRegistries") target(registries.get(path[1]!) ?? registries.set(path[1]!, {}).get(path[1]!)!, path[2]!);
+  }
+  const lines: string[] = [];
+  const auth = (nerfKey: string, b: Block): void => {
+    if (b.token) lines.push(`${nerfKey}:_authToken=${b.token}`);
+    else if (b.ident) lines.push(`${nerfKey}:_auth=${b.ident.includes(":") && !b.ident.includes("${") ? Buffer.from(b.ident).toString("base64") : b.ident}`);
+  };
+  const defaultServer = top.server ?? PUBLIC_REGISTRY;
+  if (top.server) lines.push(`registry=${top.server}`);
+  auth(yarnNerf(defaultServer), top);
+  for (const [scope, b] of scopes) {
+    const at = scope.startsWith("@") ? scope : `@${scope}`;
+    if (b.server) lines.push(`${at}:registry=${b.server}`);
+    auth(yarnNerf(b.server ?? defaultServer), b);
+  }
+  for (const [url, b] of registries) auth(yarnNerf(url), b);
+  return lines.join("\n") + (lines.length > 0 ? "\n" : "");
+}

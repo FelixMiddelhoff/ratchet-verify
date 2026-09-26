@@ -1,5 +1,5 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir, readFile, writeFile } from "node:fs/promises";
+import { join, sep } from "node:path";
 import { detectYarnFlavor } from "../lockfile/yarn.js";
 import { rewriteLockfileUrls, rewriteNpmrc, rewriteYarnrcBerry, rewriteYarnrcClassic, type ClientRegistry, type UrlMapping } from "./proxy-topology/index.js";
 
@@ -29,6 +29,26 @@ const readIfExists = async (path: string): Promise<string | undefined> => {
   }
 };
 
+const RC_FILES = new Set([".npmrc", ".yarnrc", ".yarnrc.yml"]);
+const MAX_SCAN_DIRS = 2000;
+const MAX_SCAN_DEPTH = 8;
+
+/** rc files below the root (workspace packages have their own): existing ones only, never through symlinks, node_modules or .git. */
+async function findNestedRcFiles(root: string): Promise<string[]> {
+  const found: string[] = [];
+  let visited = 0;
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    if (depth > MAX_SCAN_DEPTH || visited++ >= MAX_SCAN_DIRS) return;
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory() && entry.name !== "node_modules" && entry.name !== ".git") await walk(path, depth + 1);
+      else if (depth > 0 && entry.isFile() && RC_FILES.has(entry.name)) found.push(path);
+    }
+  };
+  await walk(root, 0);
+  return found;
+}
+
 /**
  * Rewrites the sandbox COPY of the project so every package manager talks to the proxy and nothing else: rc files lose all
  * registry, auth and network settings, and the lockfile's tarball URLs point at the proxy. Always writes `.npmrc` (npm, pnpm and
@@ -39,6 +59,15 @@ export async function applyProxyClient(dir: string, proxy: SandboxProxy, lockfil
   const npmrc = rewriteNpmrc(await readIfExists(join(dir, ".npmrc")), proxy.proxyUrl, proxy.registries);
   await writeFile(join(dir, ".npmrc"), npmrc.text);
   dropped.push(...npmrc.dropped);
+
+  // Workspace packages can carry their own rc files; left alone they would point a manager at a real registry (or hold a token).
+  for (const path of await findNestedRcFiles(dir)) {
+    const name = path.slice(path.lastIndexOf(sep) + 1);
+    const rewrite = name === ".npmrc" ? rewriteNpmrc : name === ".yarnrc" ? rewriteYarnrcClassic : rewriteYarnrcBerry;
+    const out = rewrite(await readFile(path, "utf8"), proxy.proxyUrl, proxy.registries);
+    await writeFile(path, out.text);
+    dropped.push(...out.dropped);
+  }
 
   let lockUrlsReplaced = 0;
   if (lockfileName !== undefined) {

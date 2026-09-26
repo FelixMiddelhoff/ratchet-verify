@@ -13,6 +13,8 @@ export const TRUSTED_REGISTRY_KEYS = ["registryAuth", "registryAllowlist", "regi
 export interface TrustedRegistrySettings {
   /** Text of the project `.npmrc` at the base ref; undefined = the base has none. */
   npmrc: string | undefined;
+  /** Text of the project `.yarnrc.yml` at the base ref (yarn berry registry settings); undefined = none. */
+  yarnrc?: string;
   notes: string[];
 }
 
@@ -29,5 +31,5 @@ export async function applyTrustedRegistryConfig(config: Config, base: string, r
   if (config.registryCaFile !== undefined && !isAbsolute(config.registryCaFile)) {
     throw new Error(`registryCaFile "${config.registryCaFile}" must be an absolute path when --base is used: a relative file would come from the checkout under test`);
   }
-  return { npmrc: tree.has(".npmrc") ? await reader.read(".npmrc") : undefined, notes };
+  return { npmrc: tree.has(".npmrc") ? await reader.read(".npmrc") : undefined, yarnrc: tree.has(".yarnrc.yml") ? await reader.read(".yarnrc.yml") : undefined, notes };
 }

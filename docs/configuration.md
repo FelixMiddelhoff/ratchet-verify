@@ -70,6 +70,28 @@ Notes for container mode:
   Podman machine), and the sandbox directory in your temp folder must be
   shareable with it (it is by default).
 
+### Images for pnpm and yarn
+
+The default image `node:24` ships npm and yarn classic (yarn berry works when
+the project pins its release with `yarnPath`, as it normally does). It does not
+ship pnpm. ratchet checks the image before running anything and stops with an
+error if the project's package manager is missing. Build an image that has it
+and point `containerImage` at it:
+
+```dockerfile
+FROM node:24
+RUN npm install -g pnpm@9
+```
+
+```json
+{ "isolation": "container", "containerImage": "my-node-pnpm" }
+```
+
+Verified on real podman and in CI: pnpm 9 in such an image installs from a
+lockfile, runs tests and moves a single dependency; berry 4 (via `yarnPath`)
+installs and tests, both also through the private-registry proxy. Not verified:
+pnpm 10, berry without `yarnPath` (corepack downloads need network).
+
 Environment: `GITHUB_TOKEN`, if set, is used for GitHub API calls that fetch
 release notes (raises the rate limit). It is never passed to the sandbox that
 installs and tests candidate versions.

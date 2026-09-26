@@ -94,7 +94,7 @@ interface Fixture {
 async function startFixture(e: Engine, s: ContainerSettings): Promise<Fixture> {
   const name = `ratchet-fixture-${Math.random().toString(16).slice(2, 10)}`;
   const dir = mkdtempSync(join(tmpdir(), "ratchet-fixture-"));
-  const r = await e.run(["run", "-d", "--name", name, "--network", defaultBridge(s.runtime), "--label", "ratchet.test=fixture", s.image, "node", "-e", FIXTURE_JS]);
+  const r = await e.run(["run", "-d", "--name", name, "--network", defaultBridge(s.runtime), "--label", "ratchet.test=fixture-real-engine", s.image, "node", "-e", FIXTURE_JS]);
   assert.equal(r.exitCode, 0, r.output);
   const logs = async (): Promise<string> => (await e.run(["logs", name])).output;
   let text = "";
@@ -132,7 +132,7 @@ describe("proxy topology on a real engine", () => {
   after(async () => {
     // Belt and braces: the assertions below check per run; this leaves the daemon clean even when one fails.
     if (engine) {
-      const left = (await engine.run(["ps", "-a", "-q", "--filter", "label=ratchet.test=fixture"])).output.trim();
+      const left = (await engine.run(["ps", "-a", "-q", "--filter", "label=ratchet.test=fixture-real-engine"])).output.trim();
       if (left) await engine.run(engine.runtime === "podman" ? ["rm", "-f", "-t", "0", ...left.split("\n")] : ["rm", "-f", ...left.split("\n")]);
     }
   });
