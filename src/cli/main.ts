@@ -58,11 +58,13 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
     const config = await loadConfig(projectDir);
     // Credentials follow the base ref's registry settings, not the checkout under test (see trusted.ts).
     let projectNpmrc: { text: string | undefined } | undefined;
+    let projectYarnrc: { text: string | undefined } | undefined;
     // Only needed when something asks for the proxy: a checkout that turns it off can never send a credential anywhere.
     if (args.base && (config.registryAuth || args.registryAuth)) {
       const trusted = await applyTrustedRegistryConfig(config, args.base, { list: () => listFilesAtRef(projectDir, args.base!), read: (p) => readFileAtRef(projectDir, args.base!, p) });
       for (const note of trusted.notes) io.err(`ratchet: ${note}`);
       projectNpmrc = { text: trusted.npmrc };
+      projectYarnrc = { text: trusted.yarnrc };
     }
     if (args.failOn) config.failOn = args.failOn;
     if (args.isolation) config.isolation = args.isolation;
@@ -89,7 +91,7 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
     if (workspaces.length > 0) io.err(`ratchet: workspace project (${workspaces.length} packages); tests run via the root scripts.test only`);
     const manifestNames = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"].flatMap((k) => Object.keys((manifest[k] as Record<string, string> | undefined) ?? {}));
     const report = await withRegistryProxy(
-      { config, isolation, projectDir, env: io.env, lockfiles: [oldLockfile, newLockfile], manifestNames, projectNpmrc, log: (line) => io.err(`ratchet: ${line}`) },
+      { config, isolation, projectDir, env: io.env, lockfiles: [oldLockfile, newLockfile], manifestNames, projectNpmrc, projectYarnrc, log: (line) => io.err(`ratchet: ${line}`) },
       (run) => {
         const deps = (makeDeps ?? defaultDeps(config, io.env))({ projectDir, oldLockfile, manager: manager.name, oldPackageJson, oldFiles, isolation, proxy: run?.proxy, registryProxyInfo: run?.info });
         return runPipeline({ oldLockfile, newLockfile, manifest, workspaces, oldPackageJson, config }, deps);

@@ -7,7 +7,7 @@ import type { RegistryProxyInfo } from "../report/index.js";
 import type { ResolvedIsolation } from "../sandbox/index.js";
 import type { SandboxProxy } from "../sandbox/proxy-client.js";
 import {
-  allowedPackageNames, buildProxyConfig, proxyRegistryUrl, PUBLIC_REGISTRY_ALIASES, sourceRegistries, withProxyTopology, type Engine, type UrlMapping,
+  allowedPackageNames, buildProxyConfig, proxyRegistryUrl, PUBLIC_REGISTRY_ALIASES, sourceRegistries, withProxyTopology, yarnrcToNpmrc, type Engine, type UrlMapping,
 } from "../sandbox/proxy-topology/index.js";
 
 export interface RegistryProxyRun {
@@ -26,6 +26,8 @@ export interface RegistryProxyOptions {
   manifestNames: readonly string[];
   /** The project `.npmrc` to take registries and credentials from, when it must not be the working tree's (--base: the base ref's). `{ text: undefined }` = none. */
   projectNpmrc?: { text: string | undefined };
+  /** Same for the project `.yarnrc.yml` (yarn berry registry settings, highest precedence when present). */
+  projectYarnrc?: { text: string | undefined };
   log?: (line: string) => void;
   /** Test seams. */
   homeDir?: string;
@@ -71,7 +73,8 @@ export async function withRegistryProxy<T>(options: RegistryProxyOptions, fn: (r
   }
   const userRc = options.env.NPM_CONFIG_USERCONFIG ?? join(options.homeDir ?? homedir(), ".npmrc");
   const projectRc = options.projectNpmrc ? options.projectNpmrc.text : await readIfExists(join(options.projectDir, ".npmrc"));
-  const layers = [projectRc, await readIfExists(userRc)].filter((t): t is string => t !== undefined);
+  const yarnRc = options.projectYarnrc ? options.projectYarnrc.text : await readIfExists(join(options.projectDir, ".yarnrc.yml"));
+  const layers = [yarnRc === undefined ? undefined : yarnrcToNpmrc(yarnRc), projectRc, await readIfExists(userRc)].filter((t): t is string => t !== undefined);
   const sourced = sourceRegistries(layers, options.env, config.registryPrivateHosts);
   const allowlistOn = config.registryAllowlist;
   const names = allowedPackageNames(options.lockfiles, options.manifestNames);

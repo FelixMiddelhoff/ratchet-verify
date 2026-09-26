@@ -6,6 +6,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Private-registry proxy: rc files in workspace sub-directories are rewritten too (a token there never reaches the sandbox), and yarn berry's `.yarnrc.yml` (`npmRegistryServer`, `npmAuthToken`, `npmAuthIdent`, `npmScopes`, `npmRegistries`) is a credential source, read from the base ref with `--base`.
 - Container mode checks that the image ships the project's package manager and stops with a clear error and the fix (`containerImage`) instead of failing every candidate as "install failed". The stock `node:24` image has no pnpm; docs show a two-line image (`docs/configuration.md`, "Images for pnpm and yarn").
 - Verified on real podman (CI runs the same): pnpm 9 and yarn berry 4 (via `yarnPath`) install, test and pin single dependencies in a container, and install through the private-registry proxy (frozen install from an upstream-URL lockfile included).
 

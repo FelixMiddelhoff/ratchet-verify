@@ -84,8 +84,9 @@ registry=https://npm.corp.example/api/npm/repo/
 
 An unset `${VAR}` is an error naming the variable, never an empty token.
 `_authToken` (bearer), `_auth` (basic) and `username` + `_password` (basic) are
-supported. ratchet reads the project `.npmrc` and your user `.npmrc`
-(`NPM_CONFIG_USERCONFIG` or `~/.npmrc`); the project file wins. Registry URLs
+supported. ratchet reads the project `.yarnrc.yml` (yarn berry: `npmRegistryServer`,
+`npmAuthToken`, `npmAuthIdent`, `npmScopes`, `npmRegistries`; `${VAR}` works the same), the project `.npmrc` and your user `.npmrc`
+(`NPM_CONFIG_USERCONFIG` or `~/.npmrc`); earlier in that list wins. Registry URLs
 must be `https`.
 
 Options in `.ratchetrc` (all apply only with `registryAuth`):
@@ -178,10 +179,10 @@ Be honest about what this does and does not give you.
   says so; see "Images for pnpm and yarn" in [configuration](configuration.md#images-for-pnpm-and-yarn).
   Berry through the proxy is tested with a `yarnPath` release; berry via
   corepack needs a download the sandbox cannot do.
-- Only the root `.npmrc` / `.yarnrc` / `.yarnrc.yml` are rewritten, not files
-  in workspace subdirectories. yarn's own credential settings
-  (`npmAuthToken` in `.yarnrc.yml`) are not read as a credential source; use
-  `.npmrc`.
+- Every existing `.npmrc` / `.yarnrc` / `.yarnrc.yml` in the project copy (workspace
+  packages included, up to 8 levels deep, never `node_modules`) is rewritten
+  to the proxy. Yarn classic's `.yarnrc` is rewritten but not read for
+  credentials (classic reads `.npmrc`).
 - Install scripts of the packages themselves still run, inside the sandbox.
   A dependency whose install script is new in this version is flagged in its
   verdict (npm and pnpm lockfiles record this; yarn's do not).
