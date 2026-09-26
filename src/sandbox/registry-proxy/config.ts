@@ -1,7 +1,7 @@
 import { isIP } from "node:net";
 import { parseClientCidr, type ClientCidr } from "./clients.js";
 import { isIpLiteral, looksNumeric, parseV4, parseV6 } from "./netguard.js";
-import { Credential } from "./secret.js";
+import { ClientCertificate, Credential } from "./secret.js";
 
 /** Strict, closed-world validation of the proxy configuration. Errors name paths, never values. */
 export class ConfigError extends Error {
@@ -85,6 +85,8 @@ export interface RegistryConfig {
   readonly pathPrefix: string;
   readonly isDefault: boolean;
   readonly credential: Credential | undefined;
+  /** Mutual TLS: presented to this registry's origin only (never after a cross-origin hop). */
+  readonly clientCertificate: ClientCertificate | undefined;
   /** Explicit opt-in for an in-network registry: its name may resolve to loopback/RFC1918/CGNAT/ULA. Link-local, multicast and reserved ranges stay refused. */
   readonly allowPrivateAddresses: boolean;
 }
@@ -189,7 +191,7 @@ export function parseHostPort(value: string): { host: string; port: number } | u
 }
 
 function parseRegistry(raw: unknown, path: string): RegistryConfig {
-  const o = obj(raw, path, ["id", "upstream", "pathPrefix", "default", "credential", "allowPrivateAddresses"]);
+  const o = obj(raw, path, ["id", "upstream", "pathPrefix", "default", "credential", "clientCertificate", "allowPrivateAddresses"]);
   const id = str(o.id, `${path}.id`);
   if (!ID_RE.test(id)) throw new ConfigError(`${path}.id: must match ${ID_RE}`);
   const upstream = str(o.upstream, `${path}.upstream`);
@@ -232,7 +234,17 @@ function parseRegistry(raw: unknown, path: string): RegistryConfig {
       throw new ConfigError(`${path}.credential.secret: invalid (${type === "basic" ? "username:password, " : ""}min 8 chars, no control characters)`);
     }
   }
-  return { id, upstreamOrigin: url.origin, pathPrefix, isDefault: o.default === true, credential, allowPrivateAddresses };
+  let clientCertificate: ClientCertificate | undefined;
+  if (o.clientCertificate !== undefined) {
+    const c = obj(o.clientCertificate, `${path}.clientCertificate`, ["cert", "key"]);
+    try {
+      clientCertificate = new ClientCertificate(str(c.cert, `${path}.clientCertificate.cert`), str(c.key, `${path}.clientCertificate.key`));
+    } catch (e) {
+      if (e instanceof ConfigError) throw e;
+      throw new ConfigError(`${path}.clientCertificate: needs a PEM certificate and an unencrypted PEM private key`);
+    }
+  }
+  return { id, upstreamOrigin: url.origin, pathPrefix, isDefault: o.default === true, credential, clientCertificate, allowPrivateAddresses };
 }
 
 /** Validates the untrusted JSON config. Throws ConfigError; the message never contains input values. */
@@ -358,5 +370,5 @@ export function parseConfig(raw: unknown): ProxyConfig {
 
 /** Every raw secret string in the config (for redaction). */
 export function configSecrets(config: ProxyConfig): string[] {
-  return config.registries.flatMap((r) => r.credential?.material() ?? []);
+  return config.registries.flatMap((r) => [...(r.credential?.material() ?? []), ...(r.clientCertificate?.material() ?? [])]);
 }

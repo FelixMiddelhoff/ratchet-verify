@@ -89,6 +89,27 @@ supported. ratchet reads the project `.yarnrc.yml` (yarn berry: `npmRegistryServ
 (`NPM_CONFIG_USERCONFIG` or `~/.npmrc`); earlier in that list wins. Registry URLs
 must be `https`.
 
+### Mutual TLS (client certificates)
+
+A registry that demands a client certificate works the same way as a token: the proxy holds it, the sandbox never does.
+Set it the way npm does, in the project or user `.npmrc`:
+
+```ini
+//registry.corp.example/npm/:certfile=/etc/ssl/ci/client.pem
+//registry.corp.example/npm/:keyfile=/etc/ssl/ci/client.key
+```
+
+- `certfile` / `keyfile` (paths) or `cert` / `key` (inline PEM, a literal `\n` for newlines); per registry (`//host/path/:certfile`) or global, in
+  which case every configured registry gets it. Both halves are required.
+- Paths must be absolute (or start with `~/`) and `${VAR}` works in them; a relative path would mean "somewhere in the project",
+  so it is refused. Yarn berry's `httpsCertFilePath` / `httpsKeyFilePath` (global, per scope, per `npmRegistries` entry) are read too.
+- The files are read on the machine running ratchet and passed to the proxy container on stdin, like a token: never as an
+  argument, environment variable or mount. The sandbox sees neither the certificate nor the key, and the key is redacted from every
+  log and report. The certificate is presented only to the registry's own origin, never after a redirect to another host.
+- With `--base` the `.npmrc` / `.yarnrc.yml` lines (so the paths) come from the base ref, like every other registry setting.
+- The report lists "client certificate" next to the credential kind, never a path or content. Encrypted keys are refused with an error.
+- Trust in the registry's own server certificate is separate: `registryCaFile` adds a CA for it.
+
 Options in `.ratchetrc` (all apply only with `registryAuth`):
 
 | Option | Default | Meaning |
@@ -186,7 +207,7 @@ Be honest about what this does and does not give you.
 - Install scripts of the packages themselves still run, inside the sandbox.
   A dependency whose install script is new in this version is flagged in its
   verdict (npm and pnpm lockfiles record this; yarn's do not).
-- mTLS client certificates are not supported yet.
+- Client certificates: encrypted (passphrase-protected) private keys are not supported; use an unencrypted key file readable by the user running ratchet. One certificate per registry (or one global pair).
 - ratchet's own review of this feature was done by its author, with an
   adversarial test for each attack row of the threat model
   (`test/registry-proxy/`, `test/proxy-topology/`); it has not had an

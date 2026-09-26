@@ -78,6 +78,51 @@ export class Credential {
   }
 }
 
+const PEM_CERT = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/;
+const PEM_KEY = /-----BEGIN (?:RSA |EC |)PRIVATE KEY-----([\s\S]+?)-----END (?:RSA |EC |)PRIVATE KEY-----/;
+
+/**
+ * TLS client certificate for a registry that demands mutual TLS. The certificate is public; the private key is secret and
+ * follows the same rules as a token: it never serialises, and `tlsOptions()` is called from exactly one place (the upstream
+ * request). Encrypted keys are refused (no passphrase support): a key must be usable as is.
+ */
+export class ClientCertificate {
+  readonly #cert: string;
+  readonly #key: string;
+
+  constructor(cert: string, key: string) {
+    if (typeof cert !== "string" || !PEM_CERT.test(cert)) throw new TypeError("client certificate must be a PEM certificate");
+    if (typeof key !== "string" || /ENCRYPTED/.test(key)) throw new TypeError("client key must be an unencrypted PEM private key");
+    if (!PEM_KEY.test(key)) throw new TypeError("client key must be an unencrypted PEM private key");
+    if (cert.length > 64 * 1024 || key.length > 64 * 1024) throw new TypeError("client certificate or key is too large");
+    this.#cert = cert;
+    this.#key = key;
+    Object.freeze(this);
+  }
+
+  /** Options for `https.request`. Only the upstream request may call this. */
+  tlsOptions(): { cert: string; key: string } {
+    return { cert: this.#cert, key: this.#key };
+  }
+
+  /** Raw strings the redactor must scrub: the whole PEM, its bare base64 body, and each body line (a truncated or wrapped log line). */
+  material(): string[] {
+    const lines = (PEM_KEY.exec(this.#key)?.[1] ?? "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length >= 16);
+    const body = lines.join("");
+    return [this.#key.trim(), ...(body.length >= MIN_SECRET_LENGTH ? [body] : []), ...lines];
+  }
+
+  toJSON(): { cert: string; key: string } {
+    return { cert: REDACTED, key: REDACTED };
+  }
+  toString(): string {
+    return `ClientCertificate(${REDACTED})`;
+  }
+  [inspect.custom](): string {
+    return this.toString();
+  }
+}
+
 function base64Fragments(raw: string, urlSafe: boolean): string[] {
   const out: string[] = [];
   const bytes = Buffer.from(raw, "utf8");

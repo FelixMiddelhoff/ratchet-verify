@@ -59,7 +59,7 @@ export interface DependencyVerdict {
 
 /** What the registry proxy did during a run (opt-in `registryAuth`): shown with every report so the credential handling is auditable. */
 export interface RegistryProxyInfo {
-  registries: Array<{ id: string; host: string; credential: "bearer" | "basic" | "none"; scopes?: string[] }>;
+  registries: Array<{ id: string; host: string; credential: "bearer" | "basic" | "none"; /** Mutual TLS: the proxy presents a client certificate to this registry (never the certificate or key itself). */ clientCertificate?: true; scopes?: string[] }>;
   /** "off" = the package-name allowlist was disabled by the user. */
   allowlist: "on" | "off";
   /** Extra `host:port` the proxy may tunnel to (binary downloads, CDN). */
