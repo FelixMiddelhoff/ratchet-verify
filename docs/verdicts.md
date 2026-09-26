@@ -43,7 +43,9 @@ uses. Two flavours:
   requests that no normal install makes (a tunnel to an unlisted host, a
   package nobody declared, a write method). The overall verdict is then at
   least risky, and the report says `SUSPICIOUS install activity` with the
-  counts. It can only see attempts made through the proxy.
+  counts. It can only see attempts made through the proxy. If the proxy's audit
+  lost entries (a script may have flooded it), the report says `AUDIT INCOMPLETE`
+  and a run that would be safe is risky for the same reason.
 - **unverified** (also reported as risky) — nothing ran against this bump:
   no `scripts.test`, no lockfile, the suite already fails on the old lockfile,
   or a *different* dependency reproduces the failure and this one was not

@@ -267,10 +267,20 @@ ratchet: isolation "container" needs docker or podman, but no working engine was
 ```
 
 The first run pulls the image (`node:24` by default; `containerImage` in
-`.ratchetrc` changes it). Details in [configuration.md](configuration.md).
+`.ratchetrc` changes it). The default image has npm and yarn classic but not
+pnpm: for a pnpm project ratchet stops with a clear error and you point
+`containerImage` at an image that has it (recipe in
+[configuration.md](configuration.md#images-for-pnpm-and-yarn)). Details in
+[configuration.md](configuration.md).
+
+If your dependencies come from a private registry, the sandbox cannot use your
+`.npmrc` token, deliberately. [tutorial-private-registries.md](tutorial-private-registries.md)
+sets up a proxy that holds the token while install scripts never see it.
 
 ## 9. Where next
 
+- [setup.md](setup.md): from zero to a protected repository, step by step
+- [tutorial-private-registries.md](tutorial-private-registries.md): private registries, tokens, mTLS, CI
 - [verdicts.md](verdicts.md): exactly what each verdict and caveat means
 - [ci.md](ci.md): the GitHub Action, Dependabot/Renovate, other CI systems
 - [configuration.md](configuration.md): `.ratchetrc`

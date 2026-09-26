@@ -73,8 +73,9 @@ ratchet-verify . --base main         # the short alias `ratchet` works too
 with the one on `main`. Exit code `0` means ok, `1` means a verdict at or above
 `--fail-on` (default `broken`), `2` means a usage or runtime error.
 
-More in [docs/](docs/README.md): a [two-minute demo and tutorial](docs/tutorial.md)
-with real output, what every [verdict and caveat means](docs/verdicts.md),
+More in [docs/](docs/README.md): a [setup guide](docs/setup.md) (zero to a protected
+repository, step by step), a [two-minute demo and tutorial](docs/tutorial.md)
+with real output, a [private-registry tutorial](docs/tutorial-private-registries.md), what every [verdict and caveat means](docs/verdicts.md),
 [CI recipes](docs/ci.md) (GitHub Action, Dependabot/Renovate, other systems),
 the [configuration reference](docs/configuration.md), the
 [report formats](docs/report-format.md) and [troubleshooting](docs/troubleshooting.md).
@@ -125,7 +126,9 @@ package.json + old/new package-lock.json
 | **risky** | Tests pass, but the changelog names a symbol you use as breaking; or nothing could be run to verify the bump. | Changelog excerpt + `file:line` |
 | **broken** | Tests fail, hang, or the install fails. | Bisected version (or narrowed range) + failing output |
 
-Details and every caveat: [docs/verdicts.md](docs/verdicts.md).
+Inputs, container isolation, private registries and other CI systems:
+[docs/ci.md](docs/ci.md); step-by-step setup: [docs/setup.md](docs/setup.md). Every caveat in a
+verdict: [docs/verdicts.md](docs/verdicts.md).
 
 ## Command line
 
@@ -202,8 +205,12 @@ was used:
   install makes turn the run `risky` ("SUSPICIOUS install activity").
   Dependencies that run, or newly add, an install script are flagged. If the
   protection cannot be set up, the run fails instead of running unprotected.
-  In CI use `--base` (the Action always does, and has a `registry-auth` input),
-  so a pull request cannot redirect the credential.
+  Registries that demand a client certificate (mTLS) work too: the proxy holds
+  the certificate and key. Raw tunnels for binary downloads are off unless you
+  list hosts in `registryConnectHosts`. In CI use `--base` (the Action always
+  does, and has a `registry-auth` input): registry settings, the isolation
+  options and the project `.npmrc` then come from the base branch, so a pull
+  request cannot redirect the credential or weaken the isolation.
   Details, limits and setup: [docs/private-registries.md](docs/private-registries.md).
 
 The repository's [corpus](corpus/) replays a credential-stealing `preinstall`
@@ -272,9 +279,13 @@ machines either way. Details: [docs/configuration.md](docs/configuration.md#isol
   minute of review; a missed break costs an incident, and ratchet prefers the
   former.
 - **Private registries** need the opt-in `--registry-auth` (container
-  isolation, npm and yarn classic verified against a real registry fixture; yarn
-  berry and pnpm not yet). Without it they can't authenticate inside the
-  sandbox. See [docs/private-registries.md](docs/private-registries.md).
+  isolation; verified against a token- and client-certificate-checking registry
+  fixture with npm, yarn classic, yarn berry 4 and pnpm 9 and 10). Without it
+  they can't authenticate inside the sandbox. The proxy design had an
+  independent AI security review (with proof-of-concept tests), not a
+  professional audit; use read-only tokens. Walk-through:
+  [docs/tutorial-private-registries.md](docs/tutorial-private-registries.md);
+  reference and limits: [docs/private-registries.md](docs/private-registries.md).
 - **Changelog sources, in priority order**: host release notes (GitHub, or
   GitLab releases API), then a `CHANGELOG`/`HISTORY`/`CHANGES` file in the
   repository (GitHub, GitLab, Bitbucket raw files), then the GitHub wiki, then
@@ -300,8 +311,8 @@ pnpm version must be on PATH (berry projects that commit `.yarn/releases` use it
 `npm install name@ver --package-lock-only`, `yarn add name@ver --ignore-scripts` /
 `--mode=skip-build`, or `pnpm add name@ver --lockfile-only --ignore-scripts`. pnpm's
 store, caches, config and state are redirected into the sandbox like npm's. Container
-mode with pnpm is untested: it needs `containerImage` to provide pnpm (the default
-`node:24` image does not put it on PATH).
+mode with pnpm (9 and 10) is verified, but needs `containerImage` to provide pnpm (the default
+`node:24` image does not put it on PATH; ratchet says so before running anything).
 A manager without such a probe is reported as "not tested on its own", never as safe.
 
 **Will it call an outdated dependency "broken"?** Only when the tests fail
@@ -346,8 +357,10 @@ duplicate effort; small fixes can go straight to a pull request.
 - **Flaky-test handling in the bisector.** The bisector assumes "once broken,
   stays broken". Detect non-monotonic results, re-run a probe to confirm, and
   say so in the report (`src/bisect/`).
-- **Private registry support** that forwards registry credentials into the
-  sandbox *safely* (scoped, read-only, never the real `.npmrc`).
+- **Private registries: real-world setups.** The credential proxy exists
+  (`--registry-auth`); what it needs now is people running it against real
+  Artifactory, Nexus, CodeArtifact, GitHub Packages and Verdaccio setups and
+  reporting what breaks, plus a professional security audit.
 
 ### Easy ways in
 

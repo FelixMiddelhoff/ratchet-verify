@@ -1,5 +1,8 @@
 # Private registries
 
+Reference page. For a step-by-step setup (token, `.npmrc`, first run, CI) start with
+[tutorial-private-registries.md](tutorial-private-registries.md).
+
 If your project installs packages from a private registry (Artifactory,
 Verdaccio, GitHub Packages, CodeArtifact, npm Enterprise), the install inside
 ratchet's sandbox needs a credential. ratchet does **not** copy your `.npmrc`
@@ -9,7 +12,8 @@ credential, and the sandbox can only talk to the proxy.
 
 This feature is **opt-in** and off by default. It needs container isolation
 (docker or podman running Linux containers). It is verified in real runs with npm,
-yarn classic, yarn berry 4 and pnpm 9 (see [Limits](#limits)).
+yarn classic, yarn berry 4, pnpm 9 and pnpm 10, against a token-checking and a
+client-certificate-checking registry fixture (see [Limits](#limits)).
 
 ## How it works
 
@@ -131,8 +135,9 @@ in a pull request an outsider controls them. A hostile pull request could
 otherwise point `.npmrc` at its own server with `_authToken=${NPM_TOKEN}` and
 have ratchet send your token there.
 
-So **with `--base` (the GitHub Action's default), every `registry*` setting and
-the project `.npmrc` are read from the base ref**, the reviewed and merged
+So **with `--base` (the GitHub Action's default), every `registry*` setting, the
+isolation options (`isolation`, `containerRuntime`, `containerImage`,
+`containerNetwork`) and the project `.npmrc` / `.yarnrc.yml` are read from the base ref**, the reviewed and merged
 state. Values in the working tree's `.ratchetrc` that differ are ignored with a
 note (setting names only). Consequences:
 
@@ -160,7 +165,8 @@ The Action always passes `--base`, so the registry lines of `.npmrc` and any
 `registry*` options in `.ratchetrc` must already be on the base branch.
 Secrets are not available to workflows from forks; there the run simply
 cannot authenticate. The `registry-auth` input needs ratchet-verify 0.6.0 or newer (older versions
-reject the flag); the default `ratchet-version: latest` qualifies.
+reject the flag); the default `ratchet-version: latest` qualifies. `registryConnectHosts`, client certificates,
+yarn `.yarnrc.yml` credentials and the base-pinned isolation options need 0.7.0 or newer.
 
 ## What the report tells you
 

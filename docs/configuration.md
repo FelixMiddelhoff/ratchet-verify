@@ -31,7 +31,7 @@ an error, so a typo can't silently weaken a check.
 | `registryDns` | `["1.1.1.1", "9.9.9.9"]` | With `registryAuth`: resolver IPs for registry host names; use your corporate DNS for internal registries. |
 | `registryPrivateHosts` | `[]` | With `registryAuth`: registry host names allowed to resolve to private addresses. |
 | `registryCaFile` | none | With `registryAuth`: PEM file with the CA to trust for a registry with a corporate certificate (an absolute path when `--base` is used). |
-| `containerImage` | `"node:24"` | Image the installs and tests run in. It must contain Node and npm (yarn or pnpm if your project uses them; pnpm in container mode is untested); the full `node` image has the build tools native modules need. |
+| `containerImage` | `"node:24"` | Image the installs and tests run in. It must contain Node and npm (yarn or pnpm if your project uses them; the stock image has no pnpm, see [Images for pnpm and yarn](#images-for-pnpm-and-yarn)); the full `node` image has the build tools native modules need. |
 
 ## Isolation
 
