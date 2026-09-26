@@ -26,11 +26,12 @@ an error, so a typo can't silently weaken a check.
 | `containerNetwork` | `"tests-offline"` | Container mode only. `"tests-offline"`: the test phase runs with `--network none`. `"open"`: tests keep the network. `--network` overrides it. |
 | `registryAuth` | `false` | Private registries through a credential-holding proxy (container isolation only). `--registry-auth` turns it on. See [private-registries.md](private-registries.md); with `--base` these `registry*` options are read from the base ref, not from the checkout under test. |
 | `registryAllowlist` | `true` | With `registryAuth`: only package names from the lockfiles pass the proxy. `false` (or `--no-registry-allowlist`) is reported. |
-| `registryAllowHosts` | `[]` | With `registryAuth`: extra `host[:port]` the proxy may tunnel to (a CDN or binary download host). |
+| `registryAllowHosts` | `[]` | With `registryAuth`: extra `host[:port]` the proxy may fetch redirect targets / tarballs from (a CDN). |
+| `registryConnectHosts` | `[]` | With `registryAuth`: `host[:port]` the sandbox may open a raw TLS tunnel to (binary downloads). Open egress to that host: see [private registries](private-registries.md). |
 | `registryDns` | `["1.1.1.1", "9.9.9.9"]` | With `registryAuth`: resolver IPs for registry host names; use your corporate DNS for internal registries. |
 | `registryPrivateHosts` | `[]` | With `registryAuth`: registry host names allowed to resolve to private addresses. |
 | `registryCaFile` | none | With `registryAuth`: PEM file with the CA to trust for a registry with a corporate certificate (an absolute path when `--base` is used). |
-| `containerImage` | `"node:24"` | Image the installs and tests run in. It must contain Node and npm (yarn or pnpm if your project uses them; pnpm in container mode is untested); the full `node` image has the build tools native modules need. |
+| `containerImage` | `"node:24"` | Image the installs and tests run in. It must contain Node and npm (yarn or pnpm if your project uses them; the stock image has no pnpm, see [Images for pnpm and yarn](#images-for-pnpm-and-yarn)); the full `node` image has the build tools native modules need. |
 
 ## Isolation
 

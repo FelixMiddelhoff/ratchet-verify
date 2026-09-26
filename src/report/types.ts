@@ -64,6 +64,8 @@ export interface RegistryProxyInfo {
   allowlist: "on" | "off";
   /** Extra `host:port` the proxy may tunnel to (binary downloads, CDN). */
   allowHosts: string[];
+  /** Hosts the sandbox may tunnel to (CONNECT): open egress to those hosts. */
+  connectHosts?: string[];
   allowedPackages: number;
   /** Names let through only because an allowed package depends on them (bisected versions bring new dependencies). */
   discoveredPackages: string[];

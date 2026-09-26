@@ -34,6 +34,7 @@ push, and fails the check according to `fail-on`.
 | `project-dir` | `.` | Directory with `package.json` and `package-lock.json` |
 | `fail-on` | `broken` | `broken` or `risky` |
 | `comment` | `true` | Post and update the verdict comment |
+| `network` | `tests-offline` | Container mode only: `tests-offline` (the test phase has no network) or `open`. |
 | `registry-auth` | `false` | Private registries through the credential-holding proxy (needs `isolation: container`, ratchet-verify 0.6.0+). Token via the step's `env`; registry settings come from the base branch. See [private-registries.md](private-registries.md). |
 | `sarif` | `false` | Upload results to code scanning (needs `security-events: write`) |
 | `isolation` | `temp-dir` | `temp-dir`, `container` or `auto`. GitHub-hosted Ubuntu runners have docker, so `container` works out of the box (the image is pulled on the first run) |
@@ -51,6 +52,13 @@ Notes:
   passed to the sandbox that installs and tests the candidate versions.
 - Pin `ratchet-version` to an exact version (for example `0.1.1`) if you want
   reproducible checks.
+
+Step-by-step setup (isolation, required check, pnpm images, monorepos) is in
+[setup.md](setup.md); private registries in
+[tutorial-private-registries.md](tutorial-private-registries.md). With
+`isolation: container` the sandbox image is `node:24` unless the base branch's
+`.ratchetrc` sets `containerImage` (needed for pnpm: the stock image has no
+pnpm and ratchet stops with an error saying so).
 
 ### Dependabot and Renovate
 

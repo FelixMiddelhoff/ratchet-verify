@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { cp, lstat, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { confinedPath } from "./confine.js";
@@ -57,6 +57,7 @@ export async function withSandbox<T>(options: SandboxOptions, work: (sandbox: Sa
     await mkdir(paths.home, { recursive: true });
     await mkdir(paths.tmp, { recursive: true });
     await cp(options.projectDir, dir, { recursive: true, filter: (src) => !NOT_COPIED.has(basename(src)) });
+    await dropSymlinksRatchetWrites(dir);
     if (options.packageJson !== undefined) await writeFile(join(dir, "package.json"), options.packageJson);
     for (const [file, content] of Object.entries(options.files ?? {})) await applyFile(dir, file, content);
     if (options.lockfile) await writeFile(join(dir, options.lockfile.name), options.lockfile.content);
@@ -123,6 +124,34 @@ function containerSandbox(dir: string, root: string, settings: ContainerSettings
 }
 
 const LOCKFILES = ["package-lock.json", "yarn.lock", "pnpm-lock.yaml"];
+
+/** Files ratchet reads, rewrites or replaces inside the copy. `cp` keeps symlinks, and a write through one lands on the host. */
+const WRITTEN_NAMES = new Set(["package.json", ...LOCKFILES, ".npmrc", ".yarnrc", ".yarnrc.yml"]);
+const MAX_LINK_SCAN_DIRS = 5000;
+
+/**
+ * A pull request can commit `.npmrc -> ~/.npmrc` or `package-lock.json -> ~/.bashrc`. Such a link is deleted from the sandbox copy
+ * (never followed) before anything is read or written, so a rewrite or a replaced lockfile can only touch the copy. Directories
+ * that are links are not entered.
+ */
+export async function dropSymlinksRatchetWrites(root: string): Promise<string[]> {
+  const dropped: string[] = [];
+  let visited = 0;
+  const walk = async (dir: string): Promise<void> => {
+    if (visited++ >= MAX_LINK_SCAN_DIRS) return;
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isSymbolicLink()) {
+        if (WRITTEN_NAMES.has(entry.name)) {
+          await rm(path, { force: true });
+          dropped.push(relative(root, path));
+        }
+      } else if (entry.isDirectory() && entry.name !== "node_modules" && entry.name !== ".git") await walk(path);
+    }
+  };
+  await walk(root);
+  return dropped;
+}
 function defaultLockfileName(dir: string): string | undefined {
   return LOCKFILES.find((f) => existsSync(join(dir, f)));
 }

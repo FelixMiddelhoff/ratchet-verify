@@ -140,6 +140,35 @@ break.
 Only a warning, printed with `--isolation auto` (or `"isolation": "auto"`). The
 report's last line then says `isolation: temp-dir`.
 
+**`registryAuth needs container isolation (docker or podman)`**
+The credential proxy cannot confine a `temp-dir` sandbox and ratchet never runs
+unprotected instead. Pass `--isolation container` (or set it in `.ratchetrc`
+on the base branch) and make sure docker or podman runs Linux containers.
+
+**`environment variable(s) referenced by .npmrc but not set: NPM_TOKEN`**
+A `${VAR}` in `.npmrc` / `.yarnrc.yml` has no value. Export it locally or add it
+to the step's `env` in CI. An unset variable is never turned into an empty token.
+
+**`container image node:24 does not ship pnpm`**
+The stock image has npm and yarn classic only. Build an image with pnpm and set
+`containerImage` (recipe: [configuration.md](configuration.md#images-for-pnpm-and-yarn)),
+or accept weaker isolation with `--isolation temp-dir`.
+
+**`registry settings (...) in the working tree's .ratchetrc differ from <ref> and are ignored`**
+With `--base`, registry options and the isolation options come from the base
+ref so a pull request cannot change how its own check runs. Merge the setting to
+the base branch first.
+
+**`SUSPICIOUS install activity` / `AUDIT INCOMPLETE`**
+The proxy refused requests no normal install makes, or its audit lost entries.
+Either way the run is at least `risky`. Read the class, reason and name counts;
+a binary download host may need `registryConnectHosts`
+([private-registries.md](private-registries.md)).
+
+**`certfile: the file cannot be read` / `must be an absolute path` / `passphrase-protected keys are not supported`**
+Client-certificate settings need absolute (or `~/`) paths to files the user
+running ratchet can read, and an unencrypted key.
+
 ## Things that look wrong but aren't
 
 - **`risky` exits 0.** By default only `broken` fails the run. Use
@@ -148,5 +177,7 @@ report's last line then says `isolation: temp-dir`.
   project without `node_modules` and `.git`; your working tree is never
   touched, and the copy is deleted afterwards.
 - **Your private registry doesn't work.** Credentials in `~/.npmrc` are
-  deliberately unreachable from the sandbox. A project-level `.npmrc` with a
-  registry URL is copied along, but auth tokens are not forwarded.
+  deliberately unreachable from the sandbox, and tokens in a project `.npmrc`
+  are stripped from the sandbox copy. Use the opt-in credential proxy:
+  `--registry-auth` with container isolation, walk-through in
+  [tutorial-private-registries.md](tutorial-private-registries.md).

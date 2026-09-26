@@ -21,7 +21,10 @@ export interface RegistryInput {
 
 export interface ProxyConfigInput {
   registries: readonly RegistryInput[];
+  /** Hosts a redirect / packument tarball URL may be fetched from (proxy-made GET/HEAD). */
   allowHosts?: ReadonlyArray<string | { host: string; allowPrivateAddresses?: boolean }>;
+  /** Hosts a CONNECT tunnel may reach: open egress to that host, so empty unless the user opts in. */
+  connectHosts?: ReadonlyArray<string | { host: string; allowPrivateAddresses?: boolean }>;
   packages?: { allow?: readonly string[]; allowPrefixes?: readonly string[]; /** The user turned the allowlist off. */ allowAll?: boolean };
   discovery?: "off" | "audit";
   /** Explicit resolver IPs for the sidecar's own upstream lookups (mandatory: the sidecar never uses libc). */
@@ -54,6 +57,7 @@ export function buildProxyConfig(input: ProxyConfigInput): BuiltProxyConfig {
       ...(r.credential !== undefined ? { credential: { type: r.credential.type, secret: r.credential.material()[0] } } : {}),
     })),
     allowHosts: input.allowHosts ?? [],
+    connectHosts: input.connectHosts ?? [],
     packages: { allow: [...(input.packages?.allow ?? [])], allowPrefixes: [...(input.packages?.allowPrefixes ?? [])], ...(input.packages?.allowAll ? { allowAll: true } : {}) },
     discovery: input.discovery ?? "off",
     dns: [...input.dns],

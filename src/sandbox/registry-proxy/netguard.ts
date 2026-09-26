@@ -82,6 +82,9 @@ const worse = (a: AddressClass, b: AddressClass): AddressClass => (a === "never"
 
 function classifyV4(b: number[]): AddressClass {
   const [a, c, d] = [b[0] as number, b[1] as number, b[2] as number];
+  // Cloud metadata / control endpoints that are not link-local: never reachable, not even for a host marked private.
+  if (a === 168 && c === 63 && d === 129 && b[3] === 16) return "never"; // Azure WireServer
+  if (a === 100 && c === 100 && d === 100 && b[3] === 200) return "never"; // Alibaba metadata
   if (a === 10 || a === 127) return "private";
   if (a === 172 && c >= 16 && c <= 31) return "private";
   if (a === 192 && c === 168) return "private";
@@ -108,6 +111,7 @@ function classifyV6(b: number[]): AddressClass {
     return "never"; // 64:ff9b:1::/48 local-use NAT64 and the rest of the block
   }
   if (b[0] === 0x20 && b[1] === 0x02) return classifyV4(b.slice(2, 6)); // 6to4 2002::/16 embeds a v4
+  if (b[0] === 0xfd && b[1] === 0x00 && b[2] === 0x0e && b[3] === 0xc2) return "never"; // fd00:ec2::/32 AWS IPv6 metadata
   if ((b[0] as number) >> 5 !== 0b001) {
     // Only 2000::/3 is global unicast. ULA fc00::/7 is the one permitted "private" range.
     return ((b[0] as number) & 0xfe) === 0xfc ? "private" : "never";

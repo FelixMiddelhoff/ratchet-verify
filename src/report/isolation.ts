@@ -17,10 +17,11 @@ export function describeRegistryProxy(info: RegistryProxyInfo): string {
   const parts = [
     `via proxy, credentials never entered the sandbox: ${registries}`,
     info.allowlist === "on" ? `package allowlist on (${info.allowedPackages} names)` : "package allowlist OFF",
+    ...((info.connectHosts ?? []).length > 0 ? [`TUNNEL hosts (open egress): ${info.connectHosts!.join(", ")}`] : []),
     ...(info.allowHosts.length > 0 ? [`extra hosts: ${info.allowHosts.join(", ")}`] : []),
     ...(info.discoveredPackages.length > 0 ? [`discovered dependencies: ${info.discoveredPackages.join(", ")}`] : []),
     `${info.requestsAllowed} requests allowed, ${info.requestsDenied} denied`,
-    ...(info.auditTruncated ? ["audit truncated: counts are a lower bound"] : []),
+    ...(info.auditTruncated ? ["AUDIT INCOMPLETE: entries were dropped (possibly by a script flooding the proxy), refused attempts may be unreported, so the run is not called safe"] : []),
   ];
   return parts.join("; ");
 }

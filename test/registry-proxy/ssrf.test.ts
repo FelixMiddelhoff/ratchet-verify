@@ -274,7 +274,7 @@ describe("destination guard: applied on every dial path (no test seam, real sock
     const cdn = await Upstream.start("http");
     const world = (allowHosts: unknown[]) =>
       startWorld({
-        config: (b) => ({ ...b, allowHosts }),
+        config: (b) => ({ ...b, allowHosts, connectHosts: allowHosts }),
         proxy: { resolver: { resolve4: async (h) => (h === "cdn.test" ? ["10.9.8.7"] : ["93.184.216.34"]) } },
       });
     let w = await world(["cdn.test:443"]);
@@ -349,7 +349,7 @@ describe("destination guard: applied on every dial path (no test seam, real sock
     let reached = 0;
     inner.on("connection", () => reached++);
     const resolver = (ip: string): NameResolver => ({ resolve4: async () => [ip] });
-    const mk = (allowHosts: unknown[], ip: string) => proxyWithResolver({ registries: [{ id: "main", upstream: "https://registry.example.com" }], allowHosts }, resolver(ip));
+    const mk = (allowHosts: unknown[], ip: string) => proxyWithResolver({ registries: [{ id: "main", upstream: "https://registry.example.com" }], allowHosts, connectHosts: allowHosts }, resolver(ip));
     try {
       let p = await mk([`priv.test:${port}`], "127.0.0.1");
       let res = await raw(p.port, `CONNECT priv.test:${port} HTTP/1.1\r\nHost: x\r\n\r\n`, 800);
