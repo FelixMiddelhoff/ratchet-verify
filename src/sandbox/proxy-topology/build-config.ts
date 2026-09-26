@@ -1,4 +1,4 @@
-import { configSecrets, ConfigError, parseConfig, type Credential, type Limits, type ProxyConfig } from "../registry-proxy/index.js";
+import { configSecrets, ConfigError, parseConfig, type ClientCertificate, type Credential, type Limits, type ProxyConfig } from "../registry-proxy/index.js";
 import { createRedactor, type Redactor } from "../registry-proxy/index.js";
 import { ProxyTopologyError } from "./errors.js";
 
@@ -14,6 +14,8 @@ export interface RegistryInput {
   isDefault?: boolean;
   /** Opaque: only this module hands its raw value to the stdin blob (via `material()`), nowhere else. */
   credential?: Credential;
+  /** Mutual TLS material for this registry; handed to the stdin blob like the credential. */
+  clientCertificate?: ClientCertificate;
   allowPrivateAddresses?: boolean;
 }
 
@@ -48,6 +50,7 @@ export function buildProxyConfig(input: ProxyConfigInput): BuiltProxyConfig {
       ...(r.pathPrefix !== undefined ? { pathPrefix: r.pathPrefix } : {}),
       ...(r.isDefault !== undefined ? { default: r.isDefault } : {}),
       ...(r.allowPrivateAddresses !== undefined ? { allowPrivateAddresses: r.allowPrivateAddresses } : {}),
+      ...(r.clientCertificate !== undefined ? { clientCertificate: { cert: r.clientCertificate.tlsOptions().cert, key: r.clientCertificate.tlsOptions().key } } : {}),
       ...(r.credential !== undefined ? { credential: { type: r.credential.type, secret: r.credential.material()[0] } } : {}),
     })),
     allowHosts: input.allowHosts ?? [],

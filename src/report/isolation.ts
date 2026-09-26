@@ -9,7 +9,11 @@ export function describeIsolation(info: IsolationInfo): string {
 
 /** One line for the report footer: which registries went through the proxy and what it did, never a credential. */
 export function describeRegistryProxy(info: RegistryProxyInfo): string {
-  const registries = info.registries.map((r) => `${r.host} (${r.credential === "none" ? "no credential" : `${r.credential} credential held by the proxy`}${r.scopes?.length ? `, ${r.scopes.join(" ")}` : ""})`).join(", ");
+  const held = (r: RegistryProxyInfo["registries"][number]): string => {
+    const kinds = [r.credential === "none" ? "" : `${r.credential} credential`, r.clientCertificate ? "client certificate" : ""].filter(Boolean);
+    return kinds.length === 0 ? "no credential" : `${kinds.join(" + ")} held by the proxy`;
+  };
+  const registries = info.registries.map((r) => `${r.host} (${held(r)}${r.scopes?.length ? `, ${r.scopes.join(" ")}` : ""})`).join(", ");
   const parts = [
     `via proxy, credentials never entered the sandbox: ${registries}`,
     info.allowlist === "on" ? `package allowlist on (${info.allowedPackages} names)` : "package allowlist OFF",

@@ -16,7 +16,7 @@ import { BlockedAddressError, resolveVetted } from "./netguard.js";
 import { etagMatches, plausibleTarballUrl, rewritePackument, validateLearnedUrl, weakEtag } from "./packument.js";
 import { decideRedirect, hostPortOf, REDIRECT_STATUSES } from "./redirect.js";
 import { classifyRequest, isAllowedUpstreamPackagePath, routePrefix, type Accepted } from "./request.js";
-import { createRedactor, type Redactor } from "./secret.js";
+import { createRedactor, type ClientCertificate, type Redactor } from "./secret.js";
 
 export interface ProxyOptions {
   /** Inject a resolver (tests). Default: dns.Resolver bound to config.dns. */
@@ -193,7 +193,7 @@ export async function startRegistryProxy(config: ProxyConfig, options: ProxyOpti
     }
   }
 
-  function requestUpstream(url: URL, method: string, headers: Record<string, string>, signal: AbortSignal, allowPrivate: boolean): Promise<IncomingMessage> {
+  function requestUpstream(url: URL, method: string, headers: Record<string, string>, signal: AbortSignal, allowPrivate: boolean, clientCertificate?: ClientCertificate): Promise<IncomingMessage> {
     return (async () => {
       // Resolve ONCE, vet the answer, connect to that exact address. The name only survives as SNI / Host.
       const vetted = await resolveVetted(url.hostname, resolver, allowPrivate);
@@ -211,6 +211,7 @@ export async function startRegistryProxy(config: ProxyConfig, options: ProxyOpti
         headers,
         agent: false,
         signal,
+        ...(dial.protocol === "https:" && clientCertificate ? clientCertificate.tlsOptions() : {}),
         ...(dial.protocol === "https:" ? { servername: dial.servername ?? (literal ? "" : url.hostname), ca: dial.ca ?? options.testTlsCa } : {}),
       };
       return await new Promise<IncomingMessage>((resolve, reject) => {
@@ -296,7 +297,9 @@ export async function startRegistryProxy(config: ProxyConfig, options: ProxyOpti
     const isAllowedName = (n: string): boolean => isPackageAllowed(n) !== false;
     for (;;) {
       const headers = buildUpstreamHeaders(req.headers, url, { registry: acc.registry, tainted, rewriting });
-      const upstream = await requestUpstream(url, acc.method, headers, signal, allowPrivateFor(acc.registry, url));
+      // Like the token: only the registry's own origin, and never after a hop to another origin.
+      const cert = !tainted && url.origin === acc.registry.upstreamOrigin ? acc.registry.clientCertificate : undefined;
+      const upstream = await requestUpstream(url, acc.method, headers, signal, allowPrivateFor(acc.registry, url), cert);
       const status = upstream.statusCode ?? 502;
       if (REDIRECT_STATUSES.has(status)) {
         upstream.resume();

@@ -29,9 +29,12 @@ for (const d of defs) {
   packuments[d.name].versions[d.version] = { name: d.name, version: d.version, scripts: d.scripts, dist: { tarball: "https://" + ip + ":8443/" + d.name + "/-/" + d.name + "-" + d.version + ".tgz", integrity: "sha512-" + crypto.createHash("sha512").update(tgz).digest("base64"), shasum: crypto.createHash("sha1").update(tgz).digest("hex") } };
 }
 const auth = (h) => (h ? crypto.createHash("sha256").update(h).digest("hex") : "none");
-https.createServer({ key: fs.readFileSync("/tmp/k.pem"), cert: fs.readFileSync("/tmp/c.pem") }, (req, res) => {
-  console.log("REQ " + req.method + " " + req.url + " auth=" + auth(req.headers.authorization));
-  if (!req.headers.authorization) { res.writeHead(401); return res.end("no"); }
+// CLIENT_CA_B64: the registry demands a client certificate signed by that CA (mutual TLS) instead of a token.
+const mtls = process.env.CLIENT_CA_B64 ? { requestCert: true, rejectUnauthorized: true, ca: Buffer.from(process.env.CLIENT_CA_B64, "base64").toString() } : {};
+https.createServer({ key: fs.readFileSync("/tmp/k.pem"), cert: fs.readFileSync("/tmp/c.pem"), ...mtls }, (req, res) => {
+  const cn = mtls.requestCert ? ((req.socket.getPeerCertificate().subject || {}).CN || "none") : "";
+  console.log("REQ " + req.method + " " + req.url + " auth=" + auth(req.headers.authorization) + (mtls.requestCert ? " cn=" + cn : ""));
+  if (!mtls.requestCert && !req.headers.authorization) { res.writeHead(401); return res.end("no"); }
   const name = req.url.slice(1);
   if (packuments[name]) { res.setHeader("content-type", "application/json"); return res.end(JSON.stringify(packuments[name])); }
   if (tarballs[req.url]) { res.setHeader("content-type", "application/octet-stream"); return res.end(tarballs[req.url]); }

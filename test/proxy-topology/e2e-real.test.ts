@@ -1,16 +1,17 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readdirSync, statSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { before, describe, test, type TestContext } from "node:test";
 import { detectEngine, type ContainerSettings } from "../../src/sandbox/container.js";
 import { allowedPackageNames, buildProxyConfig, createRealEngine, defaultBridge, ProxyTopologyError, withProxyTopology, type Engine } from "../../src/sandbox/proxy-topology/index.js";
-import { Credential, secretForms } from "../../src/sandbox/registry-proxy/index.js";
+import { ClientCertificate, Credential, secretForms } from "../../src/sandbox/registry-proxy/index.js";
 import { withSandbox } from "../../src/sandbox/sandbox.js";
 import { suspiciousDenials } from "../../src/pipeline/registry-proxy.js";
 import { buildReport } from "../../src/report/index.js";
+import { CLIENT_CA, CLIENT_CERT, CLIENT_KEY } from "../registry-proxy/mtls-fixtures.js";
 import { FIXTURE_JS, TRAP_JS } from "./registry-fixture.js";
 
 /**
@@ -160,6 +161,64 @@ describe("package manager through the proxy on a real engine", () => {
         });
       } finally {
         await e.run(base.runtime === "podman" ? ["rm", "-f", "-t", "0", name] : ["rm", "-f", name]);
+        rmSync(work, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test("mutual TLS: the registry demands a client certificate, the proxy presents it, the sandbox never holds the key", async (t) => {
+    await guarded(t, async (s, e) => {
+      const name = `ratchet-e2e-mtls-${Math.random().toString(16).slice(2, 10)}`;
+      const work = mkdtempSync(join(tmpdir(), "ratchet-e2e-mtls-"));
+      try {
+        const run = await e.run(["run", "-d", "--name", name, "-e", `CLIENT_CA_B64=${Buffer.from(CLIENT_CA).toString("base64")}`, "--network", defaultBridge(s.runtime), "--label", "ratchet.test=fixture-e2e", s.image, "node", "-e", FIXTURE_JS]);
+        assert.equal(run.exitCode, 0, run.output);
+        let text = "";
+        for (let i = 0; i < 100 && !text.includes("FIXTURE_READY"); i++) {
+          text = (await e.run(["logs", name])).output;
+          if (!text.includes("FIXTURE_READY")) await new Promise((r) => setTimeout(r, 200));
+        }
+        assert.ok(text.includes("FIXTURE_READY"), text);
+        const ip = /FIXTURE_IP (\S+)/.exec(text)![1]!;
+        const certFile = join(work, "ca.pem");
+        writeFileSync(certFile, Buffer.from(/FIXTURE_CERT_B64 (\S+)/.exec(text)![1]!, "base64"));
+        const project = join(work, "app");
+        mkdirSync(project);
+        writeFileSync(join(project, "package.json"), JSON.stringify({ name: "app", version: "1.0.0", dependencies: { "left-pad": "1.0.0" } }));
+
+        const config = buildProxyConfig({
+          registries: [{ id: "main", upstream: `https://${ip}:8443`, allowPrivateAddresses: true, clientCertificate: new ClientCertificate(CLIENT_CERT, CLIENT_KEY) }],
+          packages: { allow: allowedPackageNames([], ["left-pad"]) },
+          dns: ["1.1.1.1"],
+          limits: { requestTimeoutMs: 15_000 },
+        });
+        await withProxyTopology({ settings: s, config, engine: e, extraCaFile: certFile }, async (topo) => {
+          const proxy = { network: topo.networkName, proxyUrl: topo.proxyUrl, registries: [{ id: "main", isDefault: true }], lockUrlMappings: [] };
+          await withSandbox({ projectDir: project, container: s, proxy }, async (sb) => {
+            const install = await sb.run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], 240_000);
+            assert.equal(install.exitCode, 0, install.output);
+            assert.ok(existsSync(join(sb.dir, "node_modules", "left-pad", "index.js")), "installed through the mTLS registry");
+            // Nothing in the sandbox (files, npm logs, config) holds any part of the key.
+            const keyLines = CLIENT_KEY.split("\n").filter((l) => l.length >= 16 && !l.startsWith("-----"));
+            const walk = (dir: string): string[] => readdirSync(dir).flatMap((f) => (f === "node_modules" ? [] : statSync(join(dir, f)).isDirectory() ? walk(join(dir, f)) : [join(dir, f)]));
+            for (const file of walk(sb.dir)) {
+              const body = readFileSync(file, "utf8");
+              for (const line of keyLines) assert.ok(!body.includes(line), `the key must not be in the sandbox (${file.slice(sb.dir.length)})`);
+              assert.ok(!body.includes("BEGIN CERTIFICATE"), `no certificate in the sandbox either (${file.slice(sb.dir.length)})`);
+            }
+            assert.ok(!install.output.includes(keyLines[0]!));
+          });
+          const fx = (await e.run(["logs", name])).output;
+          const reqs = fx.split("\n").filter((l) => l.startsWith("REQ"));
+          assert.ok(reqs.some((l) => l.includes("/left-pad ") && l.endsWith("cn=ratchet-test-client")), reqs.join("\n"));
+          assert.ok(reqs.every((l) => l.endsWith("cn=ratchet-test-client")), "every request carried the client certificate: " + reqs.join("\n"));
+          const audit = topo.audit();
+          assert.deepEqual(suspiciousDenials(audit), [], JSON.stringify(audit.filter((x) => x.decision === "deny")));
+          const keyBody = CLIENT_KEY.split("\n").filter((l) => l.length >= 16 && !l.startsWith("-----"))[0]!;
+          assert.ok(!JSON.stringify([audit, topo.diagnostics()]).includes(keyBody));
+        });
+      } finally {
+        await e.run(s.runtime === "podman" ? ["rm", "-f", "-t", "0", name] : ["rm", "-f", name]);
         rmSync(work, { recursive: true, force: true });
       }
     });

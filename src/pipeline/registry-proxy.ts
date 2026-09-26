@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
@@ -75,7 +76,9 @@ export async function withRegistryProxy<T>(options: RegistryProxyOptions, fn: (r
   const projectRc = options.projectNpmrc ? options.projectNpmrc.text : await readIfExists(join(options.projectDir, ".npmrc"));
   const yarnRc = options.projectYarnrc ? options.projectYarnrc.text : await readIfExists(join(options.projectDir, ".yarnrc.yml"));
   const layers = [yarnRc === undefined ? undefined : yarnrcToNpmrc(yarnRc), projectRc, await readIfExists(userRc)].filter((t): t is string => t !== undefined);
-  const sourced = sourceRegistries(layers, options.env, config.registryPrivateHosts);
+  const home = options.homeDir ?? homedir();
+  const files = { home, read: (path: string): string | undefined => { try { return readFileSync(path, "utf8"); } catch { return undefined; } } };
+  const sourced = sourceRegistries(layers, options.env, config.registryPrivateHosts, files);
   const allowlistOn = config.registryAllowlist;
   const names = allowedPackageNames(options.lockfiles, options.manifestNames);
   const built = buildProxyConfig({
@@ -103,6 +106,7 @@ export async function withRegistryProxy<T>(options: RegistryProxyOptions, fn: (r
           id: r.id,
           host: `${new URL(r.upstream).host}${r.pathPrefix ?? ""}`,
           credential: r.credential?.type ?? "none",
+          ...(r.clientCertificate ? { clientCertificate: true as const } : {}),
           ...(clientById.get(r.id)?.scopes ? { scopes: [...clientById.get(r.id)!.scopes!] } : {}),
         })),
         allowlist: allowlistOn ? "on" : "off",

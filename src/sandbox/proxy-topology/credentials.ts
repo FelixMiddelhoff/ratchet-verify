@@ -1,4 +1,4 @@
-import { Credential } from "../registry-proxy/index.js";
+import { ClientCertificate, Credential } from "../registry-proxy/index.js";
 import type { RegistryInput } from "./build-config.js";
 import type { ClientRegistry } from "./npmrc.js";
 
@@ -15,6 +15,14 @@ export interface SourcedRegistries {
 }
 
 export class CredentialSourceError extends Error {}
+
+/** Where client-certificate files are read from (a seam: the pure sourcing logic never touches the file system). */
+export interface ClientCertFiles {
+  /** Content of an absolute path; undefined when it cannot be read. */
+  read(path: string): string | undefined;
+  /** Replaces a leading `~/`. */
+  home: string;
+}
 
 /** `key=value` lines of an `.npmrc` (comments and blank lines skipped). */
 export function parseNpmrc(text: string): Map<string, string> {
@@ -48,7 +56,7 @@ const nerf = (url: URL): string => `//${url.host}${url.pathname.endsWith("/") ? 
  * npm-style by the longest `//host/path/` prefix. Supported: `_authToken` (bearer), `_auth` (basic, base64 `user:pass`),
  * `username` + `_password` (basic, base64 password). `privateHosts` are the registry host names that may resolve to private addresses. A `${VAR}` that is unset is an error naming the variable, never an empty token.
  */
-export function sourceRegistries(layers: readonly string[], env: Readonly<Record<string, string | undefined>>, privateHosts: readonly string[] = []): SourcedRegistries {
+export function sourceRegistries(layers: readonly string[], env: Readonly<Record<string, string | undefined>>, privateHosts: readonly string[] = [], files?: ClientCertFiles): SourcedRegistries {
   const merged = new Map<string, string>();
   for (const layer of [...layers].reverse()) for (const [k, v] of parseNpmrc(layer)) merged.set(k, v);
   const missing = new Set<string>();
@@ -93,13 +101,56 @@ export function sourceRegistries(layers: readonly string[], env: Readonly<Record
     const id = r.isDefault ? "main" : `r${i}`;
     const pathPrefix = r.url.pathname.replace(/\/+$/, "");
     const credential = credentialFor(r.url, merged, get);
-    registries.push({ id, upstream: r.url.origin, ...(pathPrefix !== "" ? { pathPrefix } : {}), isDefault: r.isDefault, ...(privateHosts.includes(r.url.hostname) ? { allowPrivateAddresses: true } : {}), ...(credential ? { credential } : {}) });
+    const clientCertificate = clientCertificateFor(r.url, merged, get, files, assertNoMissing);
+    registries.push({ id, upstream: r.url.origin, ...(pathPrefix !== "" ? { pathPrefix } : {}), isDefault: r.isDefault, ...(privateHosts.includes(r.url.hostname) ? { allowPrivateAddresses: true } : {}), ...(credential ? { credential } : {}), ...(clientCertificate ? { clientCertificate } : {}) });
     client.push({ id, isDefault: r.isDefault, ...(r.scopes.length > 0 ? { scopes: r.scopes } : {}) });
     upstreamPrefixes.push({ id, prefix: `${r.url.origin}${pathPrefix}/` });
-    notes.push(`${id}: ${r.url.origin}${pathPrefix}/ (${credential ? `${credential.type} credential from .npmrc` : "no credential"})${r.scopes.length ? `, scopes ${r.scopes.join(", ")}` : ""}`);
+    notes.push(`${id}: ${r.url.origin}${pathPrefix}/ (${[credential ? `${credential.type} credential` : "", clientCertificate ? "client certificate" : ""].filter(Boolean).join(" + ") || "no credential"}${credential || clientCertificate ? " from .npmrc" : ""})${r.scopes.length ? `, scopes ${r.scopes.join(", ")}` : ""}`);
   });
   assertNoMissing();
   return { registries, client, upstreamPrefixes, notes };
+}
+
+/**
+ * npm's mutual-TLS settings: `certfile`/`keyfile` (paths) or `cert`/`key` (inline PEM, `
+` for newlines), either per registry
+ * (`//host/path/:certfile`) or global. Both halves are required. Paths must be absolute (or `~/`): a relative path would mean
+ * "somewhere in the project". Encrypted keys are refused. Errors name the setting, never a path or content.
+ */
+function clientCertificateFor(url: URL, merged: ReadonlyMap<string, string>, get: (k: string) => string | undefined, files: ClientCertFiles | undefined, assertNoMissing: () => void): ClientCertificate | undefined {
+  const want = nerf(url);
+  const prefixes = [...new Set([...merged.keys()].map((k) => /^(\/\/.*\/):(certfile|keyfile|cert|key)$/.exec(k)?.[1]).filter((p): p is string => p !== undefined && want.startsWith(p)))].sort((a, b) => b.length - a.length);
+  const lookup = (name: string): { value: string; setting: string } | undefined => {
+    for (const p of prefixes) {
+      const v = get(`${p}:${name}`);
+      if (v) return { value: v, setting: `${p}:${name}` };
+    }
+    const g = get(name);
+    return g ? { value: g, setting: name } : undefined;
+  };
+  const part = (fileName: string, inlineName: string): { pem: string; setting: string } | undefined => {
+    const inline = lookup(inlineName);
+    if (inline) return { pem: inline.value.replace(/\\n/g, "\n"), setting: inline.setting };
+    const file = lookup(fileName);
+    assertNoMissing(); // an unset ${VAR} in a path is reported by name before the (wrong) path is tried
+    if (!file) return undefined;
+    if (!files) throw new CredentialSourceError(`${file.setting} is set but client certificate files cannot be read here`);
+    const path = file.value.startsWith("~/") ? `${files.home.replace(/[\\/]+$/, "")}/${file.value.slice(2)}` : file.value;
+    if (!/^(?:\/|[A-Za-z]:[\\/])/.test(path)) throw new CredentialSourceError(`${file.setting} must be an absolute path (or start with ~/)`);
+    const pem = files.read(path);
+    if (pem === undefined) throw new CredentialSourceError(`${file.setting}: the file cannot be read`);
+    return { pem, setting: file.setting };
+  };
+  const cert = part("certfile", "cert");
+  const key = part("keyfile", "key");
+  if (!cert && !key) return undefined;
+  if (!cert || !key) throw new CredentialSourceError(`a client certificate needs both a certificate and a key (found only ${cert ? cert.setting : key!.setting})`);
+  try {
+    return new ClientCertificate(cert.pem, key.pem);
+  } catch (e) {
+    const encrypted = /ENCRYPTED/.test(key.pem) ? " (passphrase-protected keys are not supported: use an unencrypted key file)" : "";
+    throw new CredentialSourceError(`${key.setting}/${cert.setting}: not a usable PEM certificate and unencrypted private key${encrypted}`);
+  }
 }
 
 function credentialFor(url: URL, merged: ReadonlyMap<string, string>, get: (k: string) => string | undefined): Credential | undefined {
@@ -136,11 +187,11 @@ function yarnNerf(raw: string): string {
 /**
  * Yarn berry's registry settings from a `.yarnrc.yml`, expressed as `.npmrc` lines so `sourceRegistries` reads one format:
  * `npmRegistryServer`, `npmAuthToken`, `npmAuthIdent`, `npmScopes.<scope>.{npmRegistryServer,npmAuthToken,npmAuthIdent}` and
- * `npmRegistries.<url>.{npmAuthToken,npmAuthIdent}`. Only these keys are read (a minimal indentation reader, no YAML library);
+ * `npmRegistries.<url>.{npmAuthToken,npmAuthIdent}`, plus `httpsCertFilePath`/`httpsKeyFilePath` (global, per scope, per registry) as `certfile`/`keyfile`. Only these keys are read (a minimal indentation reader, no YAML library);
  * everything else in the file is ignored. Values keep their `${VAR}` references for `sourceRegistries` to expand or reject.
  */
 export function yarnrcToNpmrc(text: string): string {
-  type Block = { server?: string; token?: string; ident?: string };
+  type Block = { server?: string; token?: string; ident?: string; certfile?: string; keyfile?: string };
   const top: Block = {};
   const scopes = new Map<string, Block>();
   const registries = new Map<string, Block>();
@@ -162,6 +213,8 @@ export function yarnrcToNpmrc(text: string): string {
       if (leaf === "npmRegistryServer") b.server = value;
       else if (leaf === "npmAuthToken") b.token = value;
       else if (leaf === "npmAuthIdent") b.ident = value;
+      else if (leaf === "httpsCertFilePath") b.certfile = value;
+      else if (leaf === "httpsKeyFilePath") b.keyfile = value;
     };
     if (path.length === 1) target(top, path[0]!);
     else if (path.length === 3 && path[0] === "npmScopes") target(scopes.get(path[1]!) ?? scopes.set(path[1]!, {}).get(path[1]!)!, path[2]!);
@@ -172,14 +225,24 @@ export function yarnrcToNpmrc(text: string): string {
     if (b.token) lines.push(`${nerfKey}:_authToken=${b.token}`);
     else if (b.ident) lines.push(`${nerfKey}:_auth=${b.ident.includes(":") && !b.ident.includes("${") ? Buffer.from(b.ident).toString("base64") : b.ident}`);
   };
+  const tls = (nerfKey: string | undefined, b: Block): void => {
+    const prefix = nerfKey === undefined ? "" : `${nerfKey}:`;
+    if (b.certfile) lines.push(`${prefix}certfile=${b.certfile}`);
+    if (b.keyfile) lines.push(`${prefix}keyfile=${b.keyfile}`);
+  };
   const defaultServer = top.server ?? PUBLIC_REGISTRY;
+  tls(undefined, top);
   if (top.server) lines.push(`registry=${top.server}`);
   auth(yarnNerf(defaultServer), top);
   for (const [scope, b] of scopes) {
     const at = scope.startsWith("@") ? scope : `@${scope}`;
     if (b.server) lines.push(`${at}:registry=${b.server}`);
     auth(yarnNerf(b.server ?? defaultServer), b);
+    tls(yarnNerf(b.server ?? defaultServer), b);
   }
-  for (const [url, b] of registries) auth(yarnNerf(url), b);
+  for (const [url, b] of registries) {
+    auth(yarnNerf(url), b);
+    tls(yarnNerf(url), b);
+  }
   return lines.join("\n") + (lines.length > 0 ? "\n" : "");
 }
