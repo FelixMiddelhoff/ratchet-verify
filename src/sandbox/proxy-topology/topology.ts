@@ -79,7 +79,7 @@ export interface ProxyTopology {
   runId: string;
   /** The proxy's audit lines, read from the sidecar client's stderr (never over the network). Redacted. */
   audit(): AuditEntry[];
-  /** True when audit lines were dropped at the cap: the audit (and discovery) is then incomplete. */
+  /** True when audit lines were dropped at the host cap or by the sidecar's queue (a flooding sandbox can cause both): the audit (and discovery) is then incomplete. */
   auditTruncated(): boolean;
   /** Names auto-allowed by `discovery: "audit"`. */
   discoveredNames(): string[];
@@ -191,7 +191,11 @@ export async function withProxyTopology<T>(options: TopologyOptions, fn: (topolo
       if (entry) {
         if (audit.length < maxAudit) audit.push(entry);
         else auditTruncated = true;
-      } else if (diagnostics.length < 1000) diagnostics.push(line.slice(0, 500));
+      } else {
+        // The sidecar's own overflow marker: audit lines were dropped there (a flooding sandbox), so the audit is incomplete.
+        if (/^\s*\{\s*"audit"\s*:\s*"dropped"/.test(line)) auditTruncated = true;
+        if (diagnostics.length < 1000) diagnostics.push(line.slice(0, 500));
+      }
     });
     const exitedEarly = client.exited.then((code) => code);
     const deadline = now() + timeouts.readyMs;
