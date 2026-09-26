@@ -109,6 +109,10 @@ export function sourceRegistries(layers: readonly string[], env: Readonly<Record
     notes.push(`${id}: ${r.url.origin}${pathPrefix === "" ? "" : "/... (path not shown)"} (${[credential ? `${credential.type} credential` : "", clientCertificate ? "client certificate" : ""].filter(Boolean).join(" + ") || "no credential"}${credential || clientCertificate ? " from .npmrc" : ""})${r.scopes.length ? `, scopes ${r.scopes.join(", ")}` : ""}`);
   });
   assertNoMissing();
+  const withCert = registries.filter((r) => r.clientCertificate !== undefined).length;
+  if (withCert > 1 && (merged.has("certfile") || merged.has("cert"))) {
+    notes.push(`a global client certificate (certfile/cert) is presented to all ${withCert} registries; give each registry its own //host/:certfile if only one needs it`);
+  }
   return { registries, client, upstreamPrefixes, notes };
 }
 
