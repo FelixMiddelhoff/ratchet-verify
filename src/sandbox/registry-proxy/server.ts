@@ -561,7 +561,7 @@ export async function startRegistryProxy(config: ProxyConfig, options: ProxyOpti
 
   server.on("connect", (req, socket, head) =>
     handleConnect(req, socket as Socket, head, {
-      allowHosts: config.allowHosts,
+      connectHosts: config.connectHosts,
       allowPrivateHosts: config.allowPrivateHosts,
       limits: config.limits,
       resolver,

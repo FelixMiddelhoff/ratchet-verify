@@ -105,7 +105,8 @@ export function sourceRegistries(layers: readonly string[], env: Readonly<Record
     registries.push({ id, upstream: r.url.origin, ...(pathPrefix !== "" ? { pathPrefix } : {}), isDefault: r.isDefault, ...(privateHosts.includes(r.url.hostname) ? { allowPrivateAddresses: true } : {}), ...(credential ? { credential } : {}), ...(clientCertificate ? { clientCertificate } : {}) });
     client.push({ id, isDefault: r.isDefault, ...(r.scopes.length > 0 ? { scopes: r.scopes } : {}) });
     upstreamPrefixes.push({ id, prefix: `${r.url.origin}${pathPrefix}/` });
-    notes.push(`${id}: ${r.url.origin}${pathPrefix}/ (${[credential ? `${credential.type} credential` : "", clientCertificate ? "client certificate" : ""].filter(Boolean).join(" + ") || "no credential"}${credential || clientCertificate ? " from .npmrc" : ""})${r.scopes.length ? `, scopes ${r.scopes.join(", ")}` : ""}`);
+    // Host only: some registries carry a secret in the URL path (`https://dl.example/<token>/repo/`), and notes end up in logs and reports.
+    notes.push(`${id}: ${r.url.origin}${pathPrefix === "" ? "" : "/... (path not shown)"} (${[credential ? `${credential.type} credential` : "", clientCertificate ? "client certificate" : ""].filter(Boolean).join(" + ") || "no credential"}${credential || clientCertificate ? " from .npmrc" : ""})${r.scopes.length ? `, scopes ${r.scopes.join(", ")}` : ""}`);
   });
   assertNoMissing();
   return { registries, client, upstreamPrefixes, notes };

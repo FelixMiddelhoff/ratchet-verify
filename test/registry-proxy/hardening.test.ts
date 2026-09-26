@@ -103,7 +103,7 @@ describe("D8: CONNECT deny race (response must flush before the client is torn d
     const client = new FakeClient(80);
     const audits: string[] = [];
     const ctx = {
-      allowHosts: new Set(["dead.test:443"]),
+      connectHosts: new Set(["dead.test:443"]),
       allowPrivateHosts: new Set<string>(),
       limits: { connectTimeoutMs: 2000, connectIdleTimeoutMs: 2000, maxConnectBytes: 0 },
       resolver: PUBLIC_RESOLVER,
@@ -125,7 +125,7 @@ describe("D8: CONNECT deny race (response must flush before the client is torn d
     const proxy = await startRegistryProxy(
       parseConfig({
         registries: [{ id: "main", upstream: "https://registry.example.com" }],
-        allowHosts: ["dead.test:443", "priv.test:443"],
+        allowHosts: ["dead.test:443", "priv.test:443"], connectHosts: ["dead.test:443", "priv.test:443"],
         dns: ["127.0.0.1"],
         limits: { connectTimeoutMs: 500 },
       }),
@@ -150,7 +150,7 @@ describe("D9b: CONNECT authority parsing edge cases", () => {
     await new Promise<void>((r) => echo.listen(0, "127.0.0.1", r));
     const port = (echo.address() as net.AddressInfo).port;
     const proxy = await startRegistryProxy(
-      parseConfig({ registries: [{ id: "main", upstream: "https://registry.example.com" }], allowHosts: cfgHosts, dns: ["127.0.0.1"], limits: { connectTimeoutMs: 500, connectIdleTimeoutMs: 400 } }),
+      parseConfig({ registries: [{ id: "main", upstream: "https://registry.example.com" }], allowHosts: cfgHosts, connectHosts: cfgHosts, dns: ["127.0.0.1"], limits: { connectTimeoutMs: 500, connectIdleTimeoutMs: 400 } }),
       { resolver: PUBLIC_RESOLVER, testDial: () => ({ protocol: "http:", hostname: "127.0.0.1", port }) },
     );
     let dialed = 0;

@@ -24,6 +24,8 @@ export interface Config {
   registryAllowlist: boolean;
   /** With registryAuth: extra `host[:port]` the proxy may tunnel to (CDN, binary downloads); port defaults to 443. */
   registryAllowHosts: string[];
+  /** Hosts the sandbox may open a raw TLS tunnel (CONNECT) to. A multi-tenant host here is open egress. */
+  registryConnectHosts: string[];
   /** With registryAuth: resolver IPs the proxy uses for registry host names (it never uses the system resolver); set your corporate DNS for internal registries. */
   registryDns: string[];
   /** With registryAuth: registry hosts that may resolve to private addresses (an internal Artifactory on 10.x). Everything else is refused by the proxy's SSRF guard. */
@@ -43,6 +45,7 @@ export const DEFAULT_CONFIG: Config = {
   registryAuth: false,
   registryAllowlist: true,
   registryAllowHosts: [],
+  registryConnectHosts: [],
   registryDns: ["1.1.1.1", "9.9.9.9"],
   registryPrivateHosts: [],
 };
@@ -91,6 +94,9 @@ export function parseConfig(text: string): Config {
   if (typeof config.registryAllowlist !== "boolean") throw new Error(`${CONFIG_FILE}: "registryAllowlist" must be true or false`);
   if (!Array.isArray(config.registryAllowHosts) || config.registryAllowHosts.some((h) => typeof h !== "string" || !/^[A-Za-z0-9.-]+(:\d{1,5})?$/.test(h))) {
     throw new Error(`${CONFIG_FILE}: "registryAllowHosts" must be an array of "host" or "host:port" strings`);
+  }
+  if (!Array.isArray(config.registryConnectHosts) || config.registryConnectHosts.some((h) => typeof h !== "string" || !/^[A-Za-z0-9.-]+(:\d{1,5})?$/.test(h))) {
+    throw new Error(`${CONFIG_FILE}: "registryConnectHosts" must be an array of "host" or "host:port" strings`);
   }
   if (!Array.isArray(config.registryDns) || config.registryDns.length === 0 || config.registryDns.some((d) => typeof d !== "string" || isIP(d) === 0)) {
     throw new Error(`${CONFIG_FILE}: "registryDns" must be a non-empty array of IP addresses`);
