@@ -8,7 +8,11 @@ import type { GitReader } from "./main.js";
  * therefore read from the base ref (already reviewed and merged), never from the checkout under test. Explicit command-line
  * flags still win: they come from whoever runs ratchet.
  */
-export const TRUSTED_REGISTRY_KEYS = ["registryAuth", "registryAllowlist", "registryAllowHosts", "registryDns", "registryPrivateHosts", "registryCaFile"] as const;
+export const TRUSTED_REGISTRY_KEYS = [
+  "registryAuth", "registryAllowlist", "registryAllowHosts", "registryConnectHosts", "registryDns", "registryPrivateHosts", "registryCaFile",
+  // The isolation the proxy relies on: a PR must not open the test phase's network or swap the sandbox image.
+  "isolation", "containerRuntime", "containerImage", "containerNetwork",
+] as const;
 
 export interface TrustedRegistrySettings {
   /** Text of the project `.npmrc` at the base ref; undefined = the base has none. */
@@ -27,7 +31,7 @@ export async function applyTrustedRegistryConfig(config: Config, base: string, r
     if (JSON.stringify(config[key]) !== JSON.stringify(baseConfig[key])) changed.push(key);
     (config as unknown as Record<string, unknown>)[key] = baseConfig[key];
   }
-  if (changed.length > 0) notes.push(`registry settings (${changed.join(", ")}) in the working tree's ${CONFIG_FILE} differ from ${base} and are ignored: credentials only follow the base ref's settings`);
+  if (changed.length > 0) notes.push(`registry settings (${changed.join(", ")}) in the working tree's ${CONFIG_FILE} differ from ${base} and are ignored: credentials and the isolation around them only follow the base ref's settings`);
   if (config.registryCaFile !== undefined && !isAbsolute(config.registryCaFile)) {
     throw new Error(`registryCaFile "${config.registryCaFile}" must be an absolute path when --base is used: a relative file would come from the checkout under test`);
   }

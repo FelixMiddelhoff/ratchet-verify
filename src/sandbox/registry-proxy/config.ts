@@ -47,7 +47,7 @@ export const DEFAULT_LIMITS: Readonly<Limits> = Object.freeze({
   maxRedirects: 5,
   connectTimeoutMs: 10_000,
   connectIdleTimeoutMs: 30_000,
-  maxConnectBytes: 0,
+  maxConnectBytes: 1024 ** 3,
   maxQueued: 1024,
   queueWaitMs: 30_000,
   maxTunnels: 64,
@@ -97,7 +97,9 @@ export interface ProxyConfig {
   readonly registries: readonly RegistryConfig[];
   /** Lower-case `host:port` entries CONNECT (and cross-origin redirects) may reach. */
   readonly allowHosts: ReadonlySet<string>;
-  /** Subset of allowHosts whose names may resolve to private addresses (explicit, per entry). */
+  /** Lower-case `host:port` entries a CONNECT tunnel may reach. Empty by default: a tunnel is open egress to every tenant of that host. */
+  readonly connectHosts: ReadonlySet<string>;
+  /** Subset of allowHosts/connectHosts whose names may resolve to private addresses (explicit, per entry). */
   readonly allowPrivateHosts: ReadonlySet<string>;
   /** "audit": dependency names declared by an allowed packument that the client then requests are auto-allowed and recorded. */
   readonly discovery: Discovery;
@@ -249,7 +251,7 @@ function parseRegistry(raw: unknown, path: string): RegistryConfig {
 
 /** Validates the untrusted JSON config. Throws ConfigError; the message never contains input values. */
 export function parseConfig(raw: unknown): ProxyConfig {
-  const o = obj(raw, "config", ["registries", "allowHosts", "packages", "limits", "dns", "listen", "allowClients", "discovery"]);
+  const o = obj(raw, "config", ["registries", "allowHosts", "connectHosts", "packages", "limits", "dns", "listen", "allowClients", "discovery"]);
 
   const regsRaw = arr(o.registries, "config.registries", 32);
   if (regsRaw.length === 0) throw new ConfigError("config.registries: at least one registry is required");
@@ -263,26 +265,33 @@ export function parseConfig(raw: unknown): ProxyConfig {
     throw new ConfigError("config.registries: with several registries exactly one must set default: true");
   }
 
-  const allowHosts = new Set<string>();
   const allowPrivateHosts = new Set<string>();
-  for (const [i, h] of arr(o.allowHosts ?? [], "config.allowHosts", 1000).entries()) {
-    const path = `config.allowHosts[${i}]`;
-    let text: string;
-    let priv = false;
-    if (typeof h === "string") {
-      text = h;
-    } else {
-      const e = obj(h, path, ["host", "allowPrivateAddresses"]);
-      text = str(e.host, `${path}.host`);
-      if (e.allowPrivateAddresses !== undefined && typeof e.allowPrivateAddresses !== "boolean") throw new ConfigError(`${path}.allowPrivateAddresses: expected a boolean`);
-      priv = e.allowPrivateAddresses === true;
+  const parseHostList = (value: unknown, name: string): Set<string> => {
+    const out = new Set<string>();
+    for (const [i, h] of arr(value ?? [], `config.${name}`, 1000).entries()) {
+      const path = `config.${name}[${i}]`;
+      let text: string;
+      let priv = false;
+      if (typeof h === "string") {
+        text = h;
+      } else {
+        const e = obj(h, path, ["host", "allowPrivateAddresses"]);
+        text = str(e.host, `${path}.host`);
+        if (e.allowPrivateAddresses !== undefined && typeof e.allowPrivateAddresses !== "boolean") throw new ConfigError(`${path}.allowPrivateAddresses: expected a boolean`);
+        priv = e.allowPrivateAddresses === true;
+      }
+      const hp = parseHostPort(text);
+      if (!hp) throw new ConfigError(`${path}: must be lower-case host:port`);
+      if (!priv && (isIpLiteral(hp.host) || looksNumeric(hp.host))) throw new ConfigError(`${path}: IP-literal hosts need allowPrivateAddresses: true`);
+      out.add(`${hp.host}:${hp.port}`);
+      if (priv) allowPrivateHosts.add(`${hp.host}:${hp.port}`);
     }
-    const hp = parseHostPort(text);
-    if (!hp) throw new ConfigError(`${path}: must be lower-case host:port`);
-    if (!priv && (isIpLiteral(hp.host) || looksNumeric(hp.host))) throw new ConfigError(`${path}: IP-literal hosts need allowPrivateAddresses: true`);
-    allowHosts.add(`${hp.host}:${hp.port}`);
-    if (priv) allowPrivateHosts.add(`${hp.host}:${hp.port}`);
-  }
+    return out;
+  };
+  // Two different powers: allowHosts = hosts a redirect or a packument tarball URL may be fetched from (GET/HEAD, made by the proxy);
+  // connectHosts = hosts the sandbox may open a raw TLS tunnel to (CONNECT), i.e. open egress to everything on that host.
+  const allowHosts = parseHostList(o.allowHosts, "allowHosts");
+  const connectHosts = parseHostList(o.connectHosts, "connectHosts");
 
   const pk = obj(o.packages ?? {}, "config.packages", ["allow", "allowPrefixes", "allowAll"]);
   if (pk.allowAll !== undefined && typeof pk.allowAll !== "boolean") throw new ConfigError("config.packages.allowAll: must be true or false");
@@ -358,6 +367,7 @@ export function parseConfig(raw: unknown): ProxyConfig {
   return Object.freeze({
     registries: Object.freeze(finalRegistries),
     allowHosts,
+    connectHosts,
     allowPrivateHosts,
     discovery,
     packages: Object.freeze({ allow, allowPrefixes: Object.freeze(allowPrefixes), allowAll: pk.allowAll === true }),

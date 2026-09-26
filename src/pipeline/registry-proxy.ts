@@ -84,6 +84,7 @@ export async function withRegistryProxy<T>(options: RegistryProxyOptions, fn: (r
   const built = buildProxyConfig({
     registries: sourced.registries,
     allowHosts: config.registryAllowHosts,
+    connectHosts: config.registryConnectHosts,
     packages: allowlistOn ? { allow: names } : { allowAll: true },
     discovery: "audit",
     dns: config.registryDns,
@@ -104,13 +105,14 @@ export async function withRegistryProxy<T>(options: RegistryProxyOptions, fn: (r
       return {
         registries: sourced.registries.map((r) => ({
           id: r.id,
-          host: `${new URL(r.upstream).host}${r.pathPrefix ?? ""}`,
+          host: new URL(r.upstream).host, // never the path: it may carry a secret (Cloudsmith/Gemfury style URLs)
           credential: r.credential?.type ?? "none",
           ...(r.clientCertificate ? { clientCertificate: true as const } : {}),
           ...(clientById.get(r.id)?.scopes ? { scopes: [...clientById.get(r.id)!.scopes!] } : {}),
         })),
         allowlist: allowlistOn ? "on" : "off",
         allowHosts: [...config.registryAllowHosts],
+        connectHosts: [...config.registryConnectHosts],
         allowedPackages: allowlistOn ? names.length : 0,
         discoveredPackages: topology.discoveredNames(),
         requestsAllowed: audit.filter((e) => e.decision === "allow").length,

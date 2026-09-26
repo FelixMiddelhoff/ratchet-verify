@@ -5,8 +5,8 @@ import { parseHostPort, type Limits } from "./config.js";
 import { BlockedAddressError, resolveVetted, type NameResolver } from "./netguard.js";
 
 export interface ConnectContext {
-  allowHosts: ReadonlySet<string>;
-  /** Subset of allowHosts whose names may resolve to private addresses. */
+  connectHosts: ReadonlySet<string>;
+  /** Subset of connectHosts whose names may resolve to private addresses. */
   allowPrivateHosts: ReadonlySet<string>;
   limits: Pick<Limits, "connectTimeoutMs" | "connectIdleTimeoutMs" | "maxConnectBytes">;
   resolver: NameResolver;
@@ -48,7 +48,7 @@ export function normaliseConnectAuthority(authority: string): { host: string; po
  * HTTP CONNECT: only allowlisted host:port, no credentials ever involved (the
  * tunnel is opaque TLS to a public host). The name is resolved once by the
  * proxy, the answer is vetted (no private/link-local/metadata ranges unless
- * that allowHosts entry opted in) and the tunnel connects to that exact address.
+ * that connectHosts entry opted in) and the tunnel connects to that exact address.
  * Connection and idle timeouts, optional byte cap.
  */
 export function handleConnect(req: IncomingMessage, client: Socket, head: Buffer, ctx: ConnectContext): void {
@@ -61,7 +61,7 @@ export function handleConnect(req: IncomingMessage, client: Socket, head: Buffer
     deny(client, 400, "Bad Request");
     return;
   }
-  if (!ctx.allowHosts.has(key)) {
+  if (!ctx.connectHosts.has(key)) {
     ctx.audit.record({ method: "CONNECT", class: "connect", registry: null, host: key, status: 403, decision: "deny", reason: "host-not-allowed" });
     deny(client, 403, "Forbidden");
     return;

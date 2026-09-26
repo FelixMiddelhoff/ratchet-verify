@@ -27,7 +27,8 @@ export function buildReport(assessments: DependencyAssessment[], isolation?: Iso
   const verdicts = assessments.map(judge);
   const worst = verdicts.reduce<VerdictStatus>((w, v) => (SEVERITY.indexOf(v.status) > SEVERITY.indexOf(w) ? v.status : w), "safe");
   // Refused requests during the install phase are evidence of their own: a run that saw them is never plainly safe.
-  const overall: VerdictStatus = worst === "safe" && (registryProxy?.suspicious.length ?? 0) > 0 ? "risky" : worst;
+  // An incomplete audit (dropped lines) is treated the same way: a script could have flooded it to hide a refused attempt.
+  const overall: VerdictStatus = worst === "safe" && ((registryProxy?.suspicious.length ?? 0) > 0 || registryProxy?.auditTruncated === true) ? "risky" : worst;
   return { schemaVersion: 1, overall, ...(isolation ? { isolation } : {}), ...(registryProxy ? { registryProxy } : {}), verdicts };
 }
 

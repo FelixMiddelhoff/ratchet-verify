@@ -329,6 +329,14 @@ describe("proxy-topology teardown and failure mapping", () => {
     });
   });
 
+  test("the sidecar's own {audit: dropped} marker flags the audit as incomplete (a flooding sandbox must not silently hide refusals)", async () => {
+    const e = new FakeEngine("podman", { stderrLines: ['{"audit":"dropped","count":42}'] });
+    await withProxyTopology(opts(e), async (t) => {
+      await new Promise((r) => setTimeout(r, 30));
+      assert.equal(t.auditTruncated(), true);
+    });
+  });
+
   test("audit beyond the cap is dropped and flagged", async () => {
     const line = JSON.stringify({ decision: "allow", class: "packument", reason: "ok", name: "x" });
     const e = new FakeEngine("podman", { stderrLines: [line, line, line] });

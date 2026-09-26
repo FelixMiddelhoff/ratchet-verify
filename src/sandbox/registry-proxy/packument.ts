@@ -61,7 +61,12 @@ export function plausibleTarballUrl(u: URL, name: string, version: string): bool
     return false;
   }
   const bare = name.includes("/") ? (name.split("/")[1] as string) : name;
-  return path.includes(bare) && path.includes(version) && !path.split("/").some((s) => s === "..");
+  // Whole path segments, no query: `includes` alone would accept `/admin/a/export?v=1.0.0` for package `a`. Real layouts:
+  // `<name>/-/<bare>-<version>.tgz` (npm, Artifactory, Nexus, GitLab, CodeArtifact) and `download/<name>/<version>/<hash>` (GitHub Packages).
+  const segments = path.split("/");
+  if (u.search !== "" || u.hash !== "" || segments.some((s) => s === "..")) return false;
+  const flatFile = segments.some((s) => s === `${bare}-${version}.tgz` || s.startsWith(`${bare}-${version}.`));
+  return flatFile || (segments.includes(bare) && segments.includes(version));
 }
 
 export function canonicalTarballUrl(base: string, name: string, version: string): string {

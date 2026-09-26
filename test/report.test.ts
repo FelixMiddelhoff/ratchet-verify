@@ -289,7 +289,7 @@ test("registry proxy disclosure: text footer, markdown footer, JSON field; no cr
   assert.match(text, /registry proxy: via proxy, credentials never entered the sandbox: npm\.corp\.example \(bearer credential held by the proxy\), npm\.pkg\.github\.com \(no credential, @acme\)/);
   assert.match(text, /package allowlist on \(12 names\).*extra hosts: cdn\.example\.com:443.*discovered dependencies: gamma.*40 requests allowed, 2 denied/);
   assert.match(renderMarkdown(report), /<sub>registry proxy: via proxy/);
-  assert.match(describeRegistryProxy({ ...info, allowlist: "off", auditTruncated: true }), /package allowlist OFF.*audit truncated/);
+  assert.match(describeRegistryProxy({ ...info, allowlist: "off", auditTruncated: true }), /package allowlist OFF.*AUDIT INCOMPLETE/);
   assert.equal(buildReport([], { level: "temp-dir" }).registryProxy, undefined);
   assert.ok(!("registryProxy" in buildReport([], { level: "temp-dir" })));
 });
@@ -335,4 +335,10 @@ test("suspicious refusals escalate a plainly safe run to risky and are shown wit
   assert.equal(buildReport([safe()], { level: "container" }, { ...info, suspicious: [] }).overall, "safe");
   assert.equal(describeSuspicious({ ...info, suspicious: [] }), undefined);
   assert.equal(suspiciousDenials([entry("denied", "npm-api-path"), entry("invalid", "empty-segment")]).length, 0, "npm's own /-/ probes and the self-test's GET / are benign");
+});
+
+test("an incomplete proxy audit turns a plainly safe run risky", () => {
+  const info = { registries: [], allowlist: "on" as const, allowHosts: [], allowedPackages: 1, discoveredPackages: [], requestsAllowed: 1, requestsDenied: 0, suspicious: [], auditTruncated: true };
+  assert.equal(buildReport([], { level: "container" }, info).overall, "risky");
+  assert.equal(buildReport([], { level: "container" }, { ...info, auditTruncated: false }).overall, "safe");
 });

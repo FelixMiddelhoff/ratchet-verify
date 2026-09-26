@@ -33,6 +33,7 @@ async function startTunnelWorld(limits: Record<string, number> = {}): Promise<Tu
   const cfg = parseConfig({
     registries: [{ id: "main", upstream: "https://registry.test", credential: { type: "bearer", secret: CANARY } }],
     allowHosts: ["bin.test:443", "dead.test:443"],
+    connectHosts: ["bin.test:443", "dead.test:443"],
     packages: { allow: ["left-pad"] },
     dns: ["127.0.0.1"],
     limits: { requestTimeoutMs: 3000, connectTimeoutMs: 500, connectIdleTimeoutMs: 300, ...limits },

@@ -31,6 +31,8 @@ export interface SweepContext {
   nowSeconds: number;
   isPidAlive: (pid: number) => boolean;
   maxAgeSeconds?: number;
+  /** Only consider these run ids (tests use it: a sweep with a faked clock must not touch other runs' live resources). */
+  onlyRuns?: readonly string[];
 }
 
 export type SweepDecision = { sweep: true; reason: "dead-owner" | "too-old" } | { sweep: false; reason: "live-owner" | "other-host" | "young" | "unreadable" };
@@ -142,29 +144,42 @@ async function ids(engine: Engine, args: string[]): Promise<string[]> {
 }
 
 /**
+ * Inspects ids in one call. A resource that a concurrent run tears down between `ls` and `inspect` makes the whole call fail,
+ * so on failure each id is inspected alone and a vanished one is simply skipped (it is gone: nothing to sweep).
+ */
+async function inspectAll(engine: Engine, base: string[], idList: string[], kind: "container" | "network", items: Found[], problems: string[]): Promise<void> {
+  const all = await engine.run([...base, ...idList]);
+  if (all.exitCode === 0) {
+    items.push(...parseInventory(kind, all.output, problems));
+    return;
+  }
+  for (const id of idList) {
+    const one = await engine.run([...base, id]);
+    if (one.exitCode === 0) items.push(...parseInventory(kind, one.output, problems));
+    else if (!/no such|not found|no container|no network/i.test(one.output)) problems.push(`${kind} inspect failed: ${one.output.trim().slice(0, 200)}`);
+  }
+}
+
+/**
  * Removes stale ratchet resources: containers before networks. `ps -a` also finds containers that were left attached
  * to a stale network without labels (a sandbox container). Never throws; problems are reported.
  */
 export async function sweepStale(engine: Engine, ctx: Partial<SweepContext> = {}): Promise<SweepResult> {
-  const context: SweepContext = { host: ctx.host ?? hostname(), nowSeconds: ctx.nowSeconds ?? Math.floor(Date.now() / 1000), isPidAlive: ctx.isPidAlive ?? isPidAlive, maxAgeSeconds: ctx.maxAgeSeconds };
+  const context: SweepContext = { host: ctx.host ?? hostname(), nowSeconds: ctx.nowSeconds ?? Math.floor(Date.now() / 1000), isPidAlive: ctx.isPidAlive ?? isPidAlive, maxAgeSeconds: ctx.maxAgeSeconds, onlyRuns: ctx.onlyRuns };
   const result: SweepResult = { removedContainers: [], removedNetworks: [], kept: [], problems: [] };
 
   const cIds = await ids(engine, ["ps", "-a", "-q", "--filter", `label=${LABEL_RUN}`]);
   const nIds = await ids(engine, ["network", "ls", "-q", "--filter", `label=${LABEL_RUN}`]);
   const items: Found[] = [];
   if (cIds.length > 0) {
-    const r = await engine.run(["inspect", "--type", "container", ...cIds]);
-    if (r.exitCode === 0) items.push(...parseInventory("container", r.output, result.problems));
-    else result.problems.push(`container inspect failed: ${r.output.trim().slice(0, 200)}`);
+    await inspectAll(engine, ["inspect", "--type", "container"], cIds, "container", items, result.problems);
   }
   if (nIds.length > 0) {
-    const r = await engine.run(["network", "inspect", ...nIds]);
-    if (r.exitCode === 0) items.push(...parseInventory("network", r.output, result.problems));
-    else result.problems.push(`network inspect failed: ${r.output.trim().slice(0, 200)}`);
+    await inspectAll(engine, ["network", "inspect"], nIds, "network", items, result.problems);
   }
 
   const runs = new Map<string, Found[]>();
-  for (const it of items) runs.set(it.run, [...(runs.get(it.run) ?? []), it]);
+  for (const it of items) if (context.onlyRuns === undefined || context.onlyRuns.includes(it.run)) runs.set(it.run, [...(runs.get(it.run) ?? []), it]);
   const stale = new Set<string>();
   for (const [run, group] of runs) {
     const decisions = group.map((g) => decideSweep(g.owner, g.started, context));

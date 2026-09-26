@@ -55,7 +55,7 @@ describe("withRegistryProxy", () => {
         assert.ok(run.proxy.lockUrlMappings[0]!.to.startsWith(`${run.proxy.proxyUrl}/`));
         return run.info();
       });
-      assert.deepEqual(result.registries, [{ id: "main", host: "npm.corp.example/api/npm/repo", credential: "bearer" }]);
+      assert.deepEqual(result.registries, [{ id: "main", host: "npm.corp.example", credential: "bearer" }]);
       assert.deepEqual([result.allowlist, result.allowedPackages, result.allowHosts], ["on", 4, ["cdn.example.com:443"]]);
       const attach = e.commands.find((c) => c.kind === "attach")!;
       const blob = JSON.parse(attach.stdin!);

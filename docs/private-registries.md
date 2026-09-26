@@ -1,5 +1,8 @@
 # Private registries
 
+Reference page. For a step-by-step setup (token, `.npmrc`, first run, CI) start with
+[tutorial-private-registries.md](tutorial-private-registries.md).
+
 If your project installs packages from a private registry (Artifactory,
 Verdaccio, GitHub Packages, CodeArtifact, npm Enterprise), the install inside
 ratchet's sandbox needs a credential. ratchet does **not** copy your `.npmrc`
@@ -9,7 +12,8 @@ credential, and the sandbox can only talk to the proxy.
 
 This feature is **opt-in** and off by default. It needs container isolation
 (docker or podman running Linux containers). It is verified in real runs with npm,
-yarn classic, yarn berry 4 and pnpm 9 (see [Limits](#limits)).
+yarn classic, yarn berry 4, pnpm 9 and pnpm 10, against a token-checking and a
+client-certificate-checking registry fixture (see [Limits](#limits)).
 
 ## How it works
 
@@ -58,7 +62,9 @@ Everything else is refused and counted.
   by default**.
 - The credential is attached only to requests for the configured registry
   origin and is dropped on any redirect that leaves it. Redirects to a CDN
-  work only for hosts you list in `registryAllowHosts`.
+  work only for hosts you list in `registryAllowHosts`. Raw tunnels (`CONNECT`,
+  for binary downloads such as esbuild or sharp) need a separate, deliberate
+  entry in `registryConnectHosts` and are off by default.
 - No requests to loopback, private, link-local or cloud-metadata addresses,
   unless you name that registry host in `registryPrivateHosts`.
 - Size, time and concurrency limits. Tokens (and their base64, URL-encoded and
@@ -106,7 +112,7 @@ Set it the way npm does, in the project or user `.npmrc`:
 - The files are read on the machine running ratchet and passed to the proxy container on stdin, like a token: never as an
   argument, environment variable or mount. The sandbox sees neither the certificate nor the key, and the key is redacted from every
   log and report. The certificate is presented only to the registry's own origin, never after a redirect to another host.
-- With `--base` the `.npmrc` / `.yarnrc.yml` lines (so the paths) come from the base ref, like every other registry setting.
+- With `--base` the `.npmrc` / `.yarnrc.yml` lines (so the paths) come from the base ref, like every other registry setting. So do `isolation`, `containerRuntime`, `containerImage` and `containerNetwork`: a pull request cannot open the test phase's network or swap the sandbox image.
 - The report lists "client certificate" next to the credential kind, never a path or content. Encrypted keys are refused with an error.
 - Trust in the registry's own server certificate is separate: `registryCaFile` adds a CA for it.
 
@@ -116,7 +122,8 @@ Options in `.ratchetrc` (all apply only with `registryAuth`):
 |---|---|---|
 | `registryAuth` | `false` | Turn the proxy on (same as `--registry-auth`). Needs container isolation. |
 | `registryAllowlist` | `true` | Only lockfile package names pass. `false` (or `--no-registry-allowlist`) lets any valid package name through; the report then says "package allowlist OFF". |
-| `registryAllowHosts` | `[]` | Extra `host` or `host:port` (port defaults to 443) the proxy may tunnel to or follow redirects to: a CDN or S3 host for tarballs, a binary download host. |
+| `registryAllowHosts` | `[]` | Extra `host` or `host:port` (port defaults to 443) the proxy itself may fetch a redirect target or tarball URL from (GET/HEAD): a CDN or S3 host for tarballs. The sandbox cannot tunnel to these. |
+| `registryConnectHosts` | `[]` | `host[:port]` the sandbox may open a raw TLS tunnel to (`CONNECT`), for install scripts that download binaries. **A tunnel is open egress to everything on that host** (a shared CDN or object store lets a script upload your source tree to any tenant), so list only hosts that are yours or single-purpose. Capped at 1 GiB per tunnel by default. |
 | `registryDns` | `["1.1.1.1", "9.9.9.9"]` | Resolver IPs the proxy uses for registry host names (it never uses the system resolver). Set your corporate DNS for internal registries. |
 | `registryPrivateHosts` | `[]` | Registry host names that may resolve to private addresses (an internal Artifactory on `10.x`). Everything else is refused by the proxy's address guard. |
 | `registryCaFile` | none | PEM file with the CA the proxy should trust for a registry with a corporate certificate. |
@@ -128,8 +135,9 @@ in a pull request an outsider controls them. A hostile pull request could
 otherwise point `.npmrc` at its own server with `_authToken=${NPM_TOKEN}` and
 have ratchet send your token there.
 
-So **with `--base` (the GitHub Action's default), every `registry*` setting and
-the project `.npmrc` are read from the base ref**, the reviewed and merged
+So **with `--base` (the GitHub Action's default), every `registry*` setting, the
+isolation options (`isolation`, `containerRuntime`, `containerImage`,
+`containerNetwork`) and the project `.npmrc` / `.yarnrc.yml` are read from the base ref**, the reviewed and merged
 state. Values in the working tree's `.ratchetrc` that differ are ignored with a
 note (setting names only). Consequences:
 
@@ -157,7 +165,8 @@ The Action always passes `--base`, so the registry lines of `.npmrc` and any
 `registry*` options in `.ratchetrc` must already be on the base branch.
 Secrets are not available to workflows from forks; there the run simply
 cannot authenticate. The `registry-auth` input needs ratchet-verify 0.6.0 or newer (older versions
-reject the flag); the default `ratchet-version: latest` qualifies.
+reject the flag); the default `ratchet-version: latest` qualifies. `registryConnectHosts`, client certificates,
+yarn `.yarnrc.yml` credentials and the base-pinned isolation options need 0.7.0 or newer.
 
 ## What the report tells you
 
@@ -186,8 +195,13 @@ not counted.
 Be honest about what this does and does not give you.
 
 - A malicious install script can still **fetch any package that is on the
-  allowlist** (or discovered), and the hosts in `registryAllowHosts` are a
-  narrow way out. It cannot get the token, the host's files or the internet.
+  allowlist** (or discovered). It cannot get the token, the host's files or the
+  internet. The token's own read permissions, not the allowlist, are the real
+  limit on what a hostile PR or dependency can read: the allowlist is built from
+  the (PR-controlled) lockfile and manifests, and discovery adds names a package
+  declares. Use a read-only token scoped to what the project needs.
+- Every host in `registryConnectHosts` is open egress (see the option above).
+  `registryAllowHosts` alone is not: the sandbox cannot tunnel to those hosts.
 - **Direct network attempts are dropped silently** by the internal network.
   Only attempts that go through the proxy are visible in the report. A script
   that behaves during the test run and misbehaves later is invisible to any
@@ -208,7 +222,26 @@ Be honest about what this does and does not give you.
   A dependency whose install script is new in this version is flagged in its
   verdict (npm and pnpm lockfiles record this; yarn's do not).
 - Client certificates: encrypted (passphrase-protected) private keys are not supported; use an unencrypted key file readable by the user running ratchet. One certificate per registry (or one global pair).
-- ratchet's own review of this feature was done by its author, with an
-  adversarial test for each attack row of the threat model
-  (`test/registry-proxy/`, `test/proxy-topology/`); it has not had an
-  independent security audit. Use read-only, single-registry tokens.
+- **Audit reporting is best-effort.** A script can flood the proxy so denied
+  attempts are dropped from the audit; refusals still hold, and ratchet then
+  reports "AUDIT INCOMPLETE" and does not call the run safe.
+- Registries that carry a secret in the URL path are not shown by path (only the
+  host) in logs and reports, but the path is still sent to the proxy in its
+  config; treat such URLs like tokens.
+- `${VAR}` in an `.npmrc`/`.yarnrc.yml` from the base ref expands any
+  environment variable of the machine running ratchet into a credential sent to
+  that registry. Review changes to those files like changes to a CI workflow.
+- A killed ratchet (SIGKILL; Windows has no SIGTERM handler) can leave the proxy
+  container and network up to 4 hours or until the next run sweeps them. The
+  proxy image is a mutable tag (`node:24` by default); pin it by digest via
+  `containerImage` if that matters to you.
+- A sandbox script can request many large package documents at once and make
+  the proxy run out of memory; that fails the run (closed, no leak).
+- **Review status.** The design was reviewed once by an independent,
+  read-only adversarial reviewer (a separate AI agent with proof-of-concept
+  tests, not a professional audit). Its findings (a symlink write outside the
+  sandbox, `registryAllowHosts` doubling as a tunnel list, `.ratchetrc` isolation
+  keys not pinned to the base ref, registry paths in reports, audit flooding and
+  several smaller ones) are fixed and covered by regression tests
+  (`test/registry-proxy/review-fixes.test.ts`, `test/symlink-safety.test.ts`). It
+  has not had a professional security audit. Use read-only, single-registry tokens.
