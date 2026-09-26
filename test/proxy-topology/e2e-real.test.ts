@@ -88,6 +88,7 @@ const CASES: ManagerCase[] = [
   { manager: "npm", label: "npm", args: ["install", "--ignore-scripts", "--no-audit", "--no-fund"], lock: "package-lock.json", recordsUrl: false },
   { manager: "yarn", label: "yarn", args: ["install", "--ignore-scripts", "--non-interactive"], frozen: ["install", "--frozen-lockfile", "--ignore-scripts", "--non-interactive"], lock: "yarn.lock", recordsUrl: true },
   { manager: "pnpm", label: "pnpm 9", args: ["install", "--ignore-scripts"], frozen: ["install", "--frozen-lockfile", "--ignore-scripts"], lock: "pnpm-lock.yaml", image: { tag: "ratchet-test-pnpm9", run: "npm install -g pnpm@9" }, recordsUrl: false },
+  { manager: "pnpm", label: "pnpm 10", args: ["install", "--ignore-scripts"], frozen: ["install", "--frozen-lockfile", "--ignore-scripts"], lock: "pnpm-lock.yaml", image: { tag: "ratchet-test-pnpm10", run: "npm install -g pnpm@10" }, recordsUrl: false },
   { manager: "yarn", label: "yarn berry 4", args: ["install", "--mode=skip-build"], frozen: ["install", "--immutable", "--mode=skip-build"], lock: "yarn.lock", prepare: prepareBerry, recordsUrl: false },
 ];
 
