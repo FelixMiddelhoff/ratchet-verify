@@ -87,7 +87,7 @@ RUN npm install -g pnpm@9
 { "isolation": "container", "containerImage": "my-node-pnpm" }
 ```
 
-Verified on real podman and in CI: pnpm 9 in such an image installs from a
+Verified on real podman and in CI: pnpm 9 and 10 in such an image installs from a
 lockfile, runs tests and moves a single dependency; berry 4 (via `yarnPath`)
 installs and tests, both also through the private-registry proxy. Not verified:
 pnpm 10, berry without `yarnPath` (corepack downloads need network).

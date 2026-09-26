@@ -45,8 +45,8 @@ withEngine("container: the stock image lacks pnpm (preflight says so), npm and y
   await assert.rejects(ensureManagerInImage(settings("node:24"), "pnpm"), /does not ship pnpm/);
 });
 
-withEngine("container: pnpm 9 installs from a lockfile, runs tests and pins one dependency, all inside the container", async () => {
-  const image = await buildManagerImage("ratchet-test-pnpm9", "npm install -g pnpm@9");
+for (const major of [9, 10]) withEngine(`container: pnpm ${major} installs from a lockfile, runs tests and pins one dependency, all inside the container`, async () => {
+  const image = await buildManagerImage(`ratchet-test-pnpm${major}`, `npm install -g pnpm@${major}`);
   await ensureManagerInImage(settings(image), "pnpm");
   const files = { "package.json": pkg({ dependencies: { "is-number": "6.0.0" }, scripts: { test: `node -e "require('is-number')"` } }) };
   await withTempProject(files, async (project) => {
