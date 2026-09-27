@@ -357,9 +357,10 @@ describe("D3: new limits are validated", () => {
   const base = { registries: [{ id: "main", upstream: "https://registry.example.com" }], dns: ["127.0.0.1"] };
   test("ranges and types", async () => {
     const { parseConfig } = await import("../../src/sandbox/registry-proxy/config.js");
-    const ok = parseConfig({ ...base, limits: { maxQueued: 0, queueWaitMs: 1, maxTunnels: 1, maxConnections: 1, maxConnectionsPerSource: 1, keepAliveTimeoutMs: 1000, maxPackumentBytes: 1024 } });
+    const ok = parseConfig({ ...base, limits: { maxQueued: 0, queueWaitMs: 1, maxTunnels: 1, maxConnections: 1, maxConnectionsPerSource: 1, keepAliveTimeoutMs: 1000, maxPackumentBytes: 1024, maxBufferedPackumentBytes: 1024 } });
     assert.equal(ok.limits.maxQueued, 0);
-    for (const bad of [{ maxQueued: -1 }, { queueWaitMs: 0 }, { maxTunnels: 0 }, { maxConnections: 0 }, { maxConnectionsPerSource: 70_000 }, { keepAliveTimeoutMs: 10 }, { maxPackumentBytes: 10 }, { maxQueued: 1.5 }, { maxConcurrent: "128" }]) {
+    assert.equal(parseConfig(base).limits.maxBufferedPackumentBytes, 64 * 1024 * 1024);
+    for (const bad of [{ maxQueued: -1 }, { queueWaitMs: 0 }, { maxTunnels: 0 }, { maxConnections: 0 }, { maxConnectionsPerSource: 70_000 }, { keepAliveTimeoutMs: 10 }, { maxPackumentBytes: 10 }, { maxBufferedPackumentBytes: 10 }, { maxQueued: 1.5 }, { maxConcurrent: "128" }]) {
       assert.throws(() => parseConfig({ ...base, limits: bad }), /config\.limits\./, JSON.stringify(bad));
     }
     assert.equal(parseConfig(base).limits.maxConcurrent, 128);

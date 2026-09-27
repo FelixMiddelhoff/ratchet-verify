@@ -91,3 +91,18 @@ export class Counter {
     this.#n = Math.max(0, this.#n - 1);
   }
 }
+
+/** Byte-denominated version of Counter (in-flight buffered bytes, e.g. packuments), so a burst of concurrent large
+ *  responses cannot buffer past a shared budget even while each stays under its own per-response cap. */
+export class ByteBudget {
+  #used = 0;
+  constructor(private readonly max: number) {}
+  tryReserve(n: number): boolean {
+    if (this.#used + n > this.max) return false;
+    this.#used += n;
+    return true;
+  }
+  release(n: number): void {
+    this.#used = Math.max(0, this.#used - n);
+  }
+}

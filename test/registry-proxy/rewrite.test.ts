@@ -221,6 +221,34 @@ describe("D1: dist.tarball is rewritten to the proxy (abbreviated and full packu
       },
       { config: (b) => ({ ...b, limits: { maxPackumentBytes: 1024, requestTimeoutMs: 5000 } }) },
     ));
+
+  test("LOW-3: a shared buffer budget denies a second packument while the first is still buffering, even though each is under its own cap", () =>
+    withWorld(
+      async (w) => {
+        let releaseFirst: () => void = () => {};
+        const held = new Promise<void>((r) => { releaseFirst = r; });
+        let calls = 0;
+        w.registry.handler = (_q, res) => {
+          calls++;
+          res.writeHead(200, { "content-type": "application/json" });
+          if (calls === 1) {
+            res.write('{"name":"left-pad","versions":{}');
+            void held.then(() => res.end("}"));
+          } else {
+            res.end('{"name":"left-pad","versions":{}}');
+          }
+        };
+        const first = get(w.proxy.port, "/left-pad");
+        await new Promise((r) => setTimeout(r, 50));
+        const second = await get(w.proxy.port, "/left-pad");
+        releaseFirst();
+        const firstResult = await first;
+        assert.equal(second.status, 503);
+        assert.ok(w.proxy.audit().some((e) => e.reason === "packument-buffer-full"));
+        assert.equal(firstResult.status, 200);
+      },
+      { config: (b) => ({ ...b, limits: { maxPackumentBytes: 2048, maxBufferedPackumentBytes: 2048, requestTimeoutMs: 5000 } }) },
+    ));
 });
 
 const fixedFile = (pkg: string, v: string): Buffer => Buffer.from(`TARBALL:${pkg}@${v}`);

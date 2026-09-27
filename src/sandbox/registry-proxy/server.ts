@@ -10,7 +10,7 @@ import { AuditLog, clientFamily, type AuditEntry, type AuditInput, type ClientFa
 import { configSecrets, isValidPackageName, type ProxyConfig, type RegistryConfig } from "./config.js";
 import { handleConnect } from "./connect.js";
 import { createResolver, type DialTarget, type NameResolver, type TestDialSeam } from "./dial.js";
-import { Counter, Gate } from "./gate.js";
+import { ByteBudget, Counter, Gate } from "./gate.js";
 import { buildUpstreamHeaders } from "./headers.js";
 import { BlockedAddressError, resolveVetted } from "./netguard.js";
 import { etagMatches, plausibleTarballUrl, rewritePackument, validateLearnedUrl, weakEtag } from "./packument.js";
@@ -80,9 +80,9 @@ export interface RegistryProxy {
 
 const RESPONSE_HEADERS = ["content-type", "content-length", "content-encoding", "etag", "last-modified", "cache-control", "vary"];
 const MAX_PIPELINED = 8;
-const MAX_LEARNED = 200_000;
+const MAX_LEARNED = 20_000;
 const MAX_DENIED_NAMES = 10_000;
-const MAX_DECLARED = 500_000;
+const MAX_DECLARED = 50_000;
 
 class ByteCap extends Writable {
   exceeded = false;
@@ -166,6 +166,7 @@ export async function startRegistryProxy(config: ProxyConfig, options: ProxyOpti
   const resolver = options.resolver ?? createResolver(config.dns);
   const gate = new Gate(config.limits.maxConcurrent, config.limits.maxQueued, config.limits.queueWaitMs);
   const tunnels = new Counter(config.limits.maxTunnels);
+  const packumentBudget = new ByteBudget(config.limits.maxBufferedPackumentBytes);
   const allow = new Set(config.packages.allow);
   const declared = new Set<string>();
   const discovered = new Set<string>();
@@ -438,33 +439,47 @@ export async function startRegistryProxy(config: ProxyConfig, options: ProxyOpti
       send(res, 502, "unsupported-encoding");
       return;
     }
-    const collect = new ByteCap(cap);
+    // LOW-3 (security-review-0.7.md): reserve worst-case bytes against a shared budget BEFORE buffering, so
+    // maxConcurrent parallel large packuments cannot together exceed what the sidecar's own memory can hold,
+    // even though each one individually stays under `cap`. A request over budget is refused, not queued: the
+    // gate already bounds concurrency, this only bounds the memory that concurrency can consume.
+    if (!packumentBudget.tryReserve(cap)) {
+      upstream.destroy();
+      rec({ host: url.host, status: 503, decision: "error", reason: "packument-buffer-full", upstreamStatus: status });
+      send(res, 503, "packument-buffer-full");
+      return;
+    }
     try {
-      await pipeline([upstream, ...stages, collect] as [Readable, ...NodeJS.ReadWriteStream[], Writable]);
-    } catch {
-      rec({ host: url.host, status: 502, decision: "error", reason: collect.exceeded ? "response-too-large" : "stream-failed", upstreamStatus: status, bytes: collect.seen });
-      send(res, 502, collect.exceeded ? "response-too-large" : "stream-failed");
-      return;
+      const collect = new ByteCap(cap);
+      try {
+        await pipeline([upstream, ...stages, collect] as [Readable, ...NodeJS.ReadWriteStream[], Writable]);
+      } catch {
+        rec({ host: url.host, status: 502, decision: "error", reason: collect.exceeded ? "response-too-large" : "stream-failed", upstreamStatus: status, bytes: collect.seen });
+        send(res, 502, collect.exceeded ? "response-too-large" : "stream-failed");
+        return;
+      }
+      const base = `http://${req.headers.host as string}${routePrefix(acc.registry)}`;
+      const rewritten = rewritePackument(Buffer.concat(collect.chunks), acc.name, base);
+      if (!rewritten) {
+        rec({ host: url.host, status: 502, decision: "error", reason: "packument-not-json", upstreamStatus: status, bytes: collect.seen });
+        send(res, 502, "packument-not-json");
+        return;
+      }
+      learn(acc.registry, acc.name, rewritten.learned);
+      if (discoveryOn) for (const n of rewritten.declared) if (declared.size < MAX_DECLARED) declared.add(n);
+      const etag = weakEtag(rewritten.body);
+      if (etagMatches(typeof req.headers["if-none-match"] === "string" ? req.headers["if-none-match"] : undefined, etag)) {
+        res.writeHead(304, { ...outCommon, etag });
+        res.end();
+        rec({ host: url.host, status: 304, decision: "allow", reason: "not-modified", upstreamStatus: status, bytes: 0 });
+        return;
+      }
+      res.writeHead(200, { ...outCommon, "content-type": ct, etag, "content-length": rewritten.body.length });
+      res.end(rewritten.body);
+      rec({ host: url.host, status: 200, decision: "allow", reason: "forwarded", upstreamStatus: status, bytes: rewritten.body.length });
+    } finally {
+      packumentBudget.release(cap);
     }
-    const base = `http://${req.headers.host as string}${routePrefix(acc.registry)}`;
-    const rewritten = rewritePackument(Buffer.concat(collect.chunks), acc.name, base);
-    if (!rewritten) {
-      rec({ host: url.host, status: 502, decision: "error", reason: "packument-not-json", upstreamStatus: status, bytes: collect.seen });
-      send(res, 502, "packument-not-json");
-      return;
-    }
-    learn(acc.registry, acc.name, rewritten.learned);
-    if (discoveryOn) for (const n of rewritten.declared) if (declared.size < MAX_DECLARED) declared.add(n);
-    const etag = weakEtag(rewritten.body);
-    if (etagMatches(typeof req.headers["if-none-match"] === "string" ? req.headers["if-none-match"] : undefined, etag)) {
-      res.writeHead(304, { ...outCommon, etag });
-      res.end();
-      rec({ host: url.host, status: 304, decision: "allow", reason: "not-modified", upstreamStatus: status, bytes: 0 });
-      return;
-    }
-    res.writeHead(200, { ...outCommon, "content-type": ct, etag, "content-length": rewritten.body.length });
-    res.end(rewritten.body);
-    rec({ host: url.host, status: 200, decision: "allow", reason: "forwarded", upstreamStatus: status, bytes: rewritten.body.length });
   }
 
   // ---- per-socket serialisation: one in-flight request per connection, pipelined ones wait their turn ----

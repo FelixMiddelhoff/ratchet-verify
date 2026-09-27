@@ -36,6 +36,10 @@ export interface Limits {
   keepAliveTimeoutMs: number;
   /** Cap for a buffered (rewritten) packument. */
   maxPackumentBytes: number;
+  /** Total bytes buffered across all IN-FLIGHT packuments at once (LOW-3, security-review-0.7.md): maxConcurrent parallel
+   *  requests each up to maxPackumentBytes would otherwise let the sandbox OOM-kill the sidecar well under its own
+   *  per-request cap. A request over budget is queued/refused the same way as a plain concurrency limit. */
+  maxBufferedPackumentBytes: number;
 }
 
 export const DEFAULT_LIMITS: Readonly<Limits> = Object.freeze({
@@ -55,6 +59,7 @@ export const DEFAULT_LIMITS: Readonly<Limits> = Object.freeze({
   maxConnectionsPerSource: 512,
   keepAliveTimeoutMs: 65_000,
   maxPackumentBytes: 64 * 1024 * 1024,
+  maxBufferedPackumentBytes: 64 * 1024 * 1024,
 });
 
 const LIMIT_RANGES: Record<keyof Limits, [number, number]> = {
@@ -74,6 +79,7 @@ const LIMIT_RANGES: Record<keyof Limits, [number, number]> = {
   maxConnectionsPerSource: [1, 65_535],
   keepAliveTimeoutMs: [1000, 600_000],
   maxPackumentBytes: [1024, 1024 ** 3],
+  maxBufferedPackumentBytes: [1024, 1024 ** 3],
 };
 
 export interface RegistryConfig {
