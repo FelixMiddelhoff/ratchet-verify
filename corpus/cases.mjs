@@ -306,4 +306,21 @@ export const cases = [
     },
     expect: { overall: "safe", dependency: "lodash", status: "safe", workspaces: ["@corpus/a"] },
   },
+  {
+    // Real incident: node-fetch 3.0.0 (2021-10) dropped CommonJS support (ESM-only),
+    // breaking every `require("node-fetch")` caller. Documented in the project's own
+    // upgrade guide (github.com/node-fetch/node-fetch/blob/main/docs/v3-UPGRADE-GUIDE.md,
+    // "This package is now pure ESM") and in downstream issues such as
+    // vercel/next.js#31112 and many others filed right after the release.
+    name: "node-fetch 2.6.7 -> 3.3.2 (v3 dropped CommonJS support, require() breaks)",
+    source: "real",
+    bump: { name: "node-fetch", old: "2.6.7", new: "3.3.2" },
+    files: {
+      "test.js": testScript(`
+        const fetch = require("node-fetch");
+        if (typeof fetch !== "function") throw new Error("node-fetch broke");
+      `),
+    },
+    expect: { overall: "broken", dependency: "node-fetch", status: "broken", summary: /broken by 3\.0\.0/ },
+  },
 ];
