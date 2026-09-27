@@ -120,7 +120,7 @@ describe("package manager through the proxy on a real engine", () => {
 
         const config = buildProxyConfig({
           registries: [{ id: "main", upstream: `https://${ip}:8443`, allowPrivateAddresses: true, credential: new Credential("bearer", CANARY) }],
-          packages: { allow: allowedPackageNames([], ["left-pad"]) },
+          packages: { allow: allowedPackageNames("", [], ["left-pad"]) },
           dns: ["1.1.1.1"],
           limits: { requestTimeoutMs: 15_000 },
         });
@@ -189,7 +189,7 @@ describe("package manager through the proxy on a real engine", () => {
 
         const config = buildProxyConfig({
           registries: [{ id: "main", upstream: `https://${ip}:8443`, allowPrivateAddresses: true, clientCertificate: new ClientCertificate(CLIENT_CERT, CLIENT_KEY) }],
-          packages: { allow: allowedPackageNames([], ["left-pad"]) },
+          packages: { allow: allowedPackageNames("", [], ["left-pad"]) },
           dns: ["1.1.1.1"],
           limits: { requestTimeoutMs: 15_000 },
         });
@@ -250,7 +250,7 @@ describe("package manager through the proxy on a real engine", () => {
 
         const config = buildProxyConfig({
           registries: [{ id: "main", upstream: `https://${ip}:8443`, allowPrivateAddresses: true, credential: new Credential("bearer", CANARY) }],
-          packages: { allow: allowedPackageNames([], ["trap"]) },
+          packages: { allow: allowedPackageNames("", [], ["trap"]) },
           dns: ["1.1.1.1"],
           limits: { requestTimeoutMs: 15_000 },
         });

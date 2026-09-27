@@ -9,7 +9,7 @@ import type { GitReader } from "./main.js";
  * flags still win: they come from whoever runs ratchet.
  */
 export const TRUSTED_REGISTRY_KEYS = [
-  "registryAuth", "registryAllowlist", "registryAllowHosts", "registryConnectHosts", "registryDns", "registryPrivateHosts", "registryCaFile",
+  "registryAuth", "registryAllowlist", "registryDiscovery", "registryAllowHosts", "registryConnectHosts", "registryDns", "registryPrivateHosts", "registryCaFile",
   // The isolation the proxy relies on: a PR must not open the test phase's network or swap the sandbox image.
   "isolation", "containerRuntime", "containerImage", "containerNetwork",
 ] as const;

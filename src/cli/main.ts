@@ -5,6 +5,7 @@ import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { renderMarkdown } from "../ci/comment.js";
 import { loadConfig } from "../config.js";
+import { diffLockfileTexts } from "../lockfile/index.js";
 import { runPipeline, type PipelineDeps } from "../pipeline/index.js";
 import { realDeps } from "../pipeline/real.js";
 import type { SandboxProxy } from "../sandbox/proxy-client.js";
@@ -89,9 +90,12 @@ export async function runCli(argv: string[], io: CliIo, makeDeps?: DepsFactory):
     if (isolation.container) await ensureManagerInImage(isolation.container, manager.name);
 
     if (workspaces.length > 0) io.err(`ratchet: workspace project (${workspaces.length} packages); tests run via the root scripts.test only`);
-    const manifestNames = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"].flatMap((k) => Object.keys((manifest[k] as Record<string, string> | undefined) ?? {}));
+    const depNames = (m: Record<string, unknown>): string[] => ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"].flatMap((k) => Object.keys((m[k] as Record<string, string> | undefined) ?? {}));
+    // The allowlist must anchor on the BASE state, not this checkout: oldPackageJson is the base manifest when one was read (--base / --old-package-json), else there is no separate base and the working tree's manifest already IS the base for --old mode.
+    const baseManifest = oldPackageJson === undefined ? manifest : JSON.parse(oldPackageJson);
+    const candidateNames = [...new Set(diffLockfileTexts(oldLockfile, newLockfile, manifest, workspaces).map((c) => c.name))];
     const report = await withRegistryProxy(
-      { config, isolation, projectDir, env: io.env, lockfiles: [oldLockfile, newLockfile], manifestNames, projectNpmrc, projectYarnrc, log: (line) => io.err(`ratchet: ${line}`) },
+      { config, isolation, projectDir, env: io.env, baseLockfileText: oldLockfile, baseManifestNames: depNames(baseManifest), candidateNames, projectNpmrc, projectYarnrc, log: (line) => io.err(`ratchet: ${line}`) },
       (run) => {
         const deps = (makeDeps ?? defaultDeps(config, io.env))({ projectDir, oldLockfile, manager: manager.name, oldPackageJson, oldFiles, isolation, proxy: run?.proxy, registryProxyInfo: run?.info });
         return runPipeline({ oldLockfile, newLockfile, manifest, workspaces, oldPackageJson, config }, deps);

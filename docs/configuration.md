@@ -25,7 +25,8 @@ an error, so a typo can't silently weaken a check.
 | `containerRuntime` | `"auto"` | `"auto"` (docker, then podman), `"docker"` or `"podman"`. |
 | `containerNetwork` | `"tests-offline"` | Container mode only. `"tests-offline"`: the test phase runs with `--network none`. `"open"`: tests keep the network. `--network` overrides it. |
 | `registryAuth` | `false` | Private registries through a credential-holding proxy (container isolation only). `--registry-auth` turns it on. See [private-registries.md](private-registries.md); with `--base` these `registry*` options are read from the base ref, not from the checkout under test. |
-| `registryAllowlist` | `true` | With `registryAuth`: only package names from the lockfiles pass the proxy. `false` (or `--no-registry-allowlist`) is reported. |
+| `registryAllowlist` | `true` | With `registryAuth`: only package names already in the base lockfile/manifest plus the ones ratchet is testing pass the proxy. `false` (or `--no-registry-allowlist`) is reported. Not a boundary against the pull request itself — see [private registries](private-registries.md). |
+| `registryDiscovery` | `false` | With `registryAuth` and `registryAllowlist`: also let a transitive dependency an allowed packument declares pass the proxy (reported). Off by default: such a name is denied instead of merely audited. |
 | `registryAllowHosts` | `[]` | With `registryAuth`: extra `host[:port]` the proxy may fetch redirect targets / tarballs from (a CDN). |
 | `registryConnectHosts` | `[]` | With `registryAuth`: `host[:port]` the sandbox may open a raw TLS tunnel to (binary downloads). Open egress to that host: see [private registries](private-registries.md). |
 | `registryDns` | `["1.1.1.1", "9.9.9.9"]` | With `registryAuth`: resolver IPs for registry host names; use your corporate DNS for internal registries. |

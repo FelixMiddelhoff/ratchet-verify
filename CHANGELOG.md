@@ -5,6 +5,9 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+### Security
+- Registry-proxy allowlist (LOW-1, security-review-0.7.md) is now anchored on the base ref's lockfile/manifest plus the exact packages under test, instead of the whole new lockfile from the checkout under test; an unrelated name (e.g. one a hostile version's packument declares) is no longer implicitly allowed just for appearing anywhere in the PR's own lockfile. New `registryDiscovery` option (default `false`): a transitive dependency an allowed packument declares is now denied by default instead of being audited and let through; set it to `true` to restore that behaviour. Docs updated to state plainly that the allowlist is not a boundary against the PR author, only against unrelated names.
+
 ## [0.7.0] - 2026-09-27
 
 ### Security

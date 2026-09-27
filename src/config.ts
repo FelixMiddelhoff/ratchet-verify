@@ -20,8 +20,10 @@ export interface Config {
   containerNetwork: "tests-offline" | "open";
   /** Opt-in: install through a registry proxy that holds the credentials from `.npmrc`, so private registries work. Needs container isolation. */
   registryAuth: boolean;
-  /** With registryAuth: only package names from the lockfiles (plus their dependencies, reported) pass the proxy. Turning it off is reported. */
+  /** With registryAuth: only package names already in the base lockfile/manifest plus the ones under test pass the proxy. Turning it off is reported. */
   registryAllowlist: boolean;
+  /** With registryAuth and registryAllowlist: also let through a transitive dependency an allowed packument declares (reported). Off by default: those are denied instead of merely audited. */
+  registryDiscovery: boolean;
   /** With registryAuth: extra `host[:port]` the proxy may tunnel to (CDN, binary downloads); port defaults to 443. */
   registryAllowHosts: string[];
   /** Hosts the sandbox may open a raw TLS tunnel (CONNECT) to. A multi-tenant host here is open egress. */
@@ -44,6 +46,7 @@ export const DEFAULT_CONFIG: Config = {
   containerNetwork: "tests-offline",
   registryAuth: false,
   registryAllowlist: true,
+  registryDiscovery: false,
   registryAllowHosts: [],
   registryConnectHosts: [],
   registryDns: ["1.1.1.1", "9.9.9.9"],
@@ -92,6 +95,7 @@ export function parseConfig(text: string): Config {
   }
   if (typeof config.registryAuth !== "boolean") throw new Error(`${CONFIG_FILE}: "registryAuth" must be true or false`);
   if (typeof config.registryAllowlist !== "boolean") throw new Error(`${CONFIG_FILE}: "registryAllowlist" must be true or false`);
+  if (typeof config.registryDiscovery !== "boolean") throw new Error(`${CONFIG_FILE}: "registryDiscovery" must be true or false`);
   if (!Array.isArray(config.registryAllowHosts) || config.registryAllowHosts.some((h) => typeof h !== "string" || !/^[A-Za-z0-9.-]+(:\d{1,5})?$/.test(h))) {
     throw new Error(`${CONFIG_FILE}: "registryAllowHosts" must be an array of "host" or "host:port" strings`);
   }
