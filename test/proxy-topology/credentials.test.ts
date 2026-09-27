@@ -55,4 +55,12 @@ describe("sourceRegistries", () => {
     const r = sourceRegistries(["registry=https://10.0.0.5/\n@x:registry=https://other.example/"], {}, ["10.0.0.5"]);
     assert.deepEqual(r.registries.map((x) => [x.upstream, x.allowPrivateAddresses]), [["https://10.0.0.5", true], ["https://other.example", undefined]]);
   });
+
+  test("I-1: an env var used for a credential that is not token/auth/key-shaped gets a name-only note; a token-shaped one does not", () => {
+    const suspicious = sourceRegistries(["registry=https://a.example/\n//a.example/:_authToken=${DATABASE_URL}"], { DATABASE_URL: TOKEN });
+    assert.ok(suspicious.notes.some((n) => n.includes("${DATABASE_URL}") && n.includes("does not look like a token")));
+    assert.ok(!suspicious.notes.join("").includes(TOKEN), "the value itself is never in a note");
+    const fine = sourceRegistries([`registry=https://a.example/\n//a.example/:_authToken=\${GITHUB_TOKEN}`], { GITHUB_TOKEN: TOKEN });
+    assert.ok(!fine.notes.some((n) => n.includes("does not look like a token")));
+  });
 });
