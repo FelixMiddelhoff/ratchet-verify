@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
-import { DEFAULT_IMAGE, detectEngine, type ContainerSettings } from "../container.js";
+import { detectEngine, type ContainerSettings } from "../container.js";
 import type { AuditEntry } from "../registry-proxy/index.js";
 import { READY_PREFIX } from "../registry-proxy/index.js";
 import type { BuiltProxyConfig } from "./build-config.js";
@@ -17,6 +17,14 @@ import { LABEL_RUN, makeLabels, rmArgs, sweepStale, type SweepResult } from "./s
 
 /** The compiled proxy directory next to this module (`dist/sandbox/registry-proxy`): main.js imports only its siblings and node built-ins. */
 export const DEFAULT_PROXY_MAIN = fileURLToPath(new URL("../registry-proxy/main.js", import.meta.url));
+
+/**
+ * I-4 (security-review-0.7.md): the sidecar holds the registry credential, so — unlike the sandbox image, which never
+ * sees one and stays a plain mutable tag for flexibility — its default image is pinned by digest (the current node:24
+ * multi-arch index, checked 2026-09-27): a compromised or silently-replaced `node:24` tag upstream cannot swap what
+ * this specific container runs. `sidecarImage` still overrides it for whoever wants a different (or newer) image.
+ */
+export const DEFAULT_SIDECAR_IMAGE = "docker.io/library/node@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4";
 
 export interface TopologyTimeouts {
   readyMs: number;
@@ -141,7 +149,7 @@ export async function withProxyTopology<T>(options: TopologyOptions, fn: (topolo
     }
 
     // 1. Images (a first pull must not be charged to the readiness timeout).
-    for (const image of new Set([options.sidecarImage ?? DEFAULT_IMAGE, settings.image])) {
+    for (const image of new Set([options.sidecarImage ?? DEFAULT_SIDECAR_IMAGE, settings.image])) {
       const present = await run(["image", "inspect", image]);
       if (present.exitCode !== 0) {
         const pulled = await run(["pull", image], timeouts.pullMs);
@@ -164,7 +172,7 @@ export async function withProxyTopology<T>(options: TopologyOptions, fn: (topolo
         name: sidecarName,
         network: networkName,
         labels,
-        image: options.sidecarImage ?? DEFAULT_IMAGE,
+        image: options.sidecarImage ?? DEFAULT_SIDECAR_IMAGE,
         proxyDir: dirname(options.proxyMain ?? DEFAULT_PROXY_MAIN),
         extraCaFile: options.extraCaFile,
       }),

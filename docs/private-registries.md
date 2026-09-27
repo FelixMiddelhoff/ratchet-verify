@@ -241,9 +241,11 @@ Be honest about what this does and does not give you.
   environment variable of the machine running ratchet into a credential sent to
   that registry. Review changes to those files like changes to a CI workflow.
 - A killed ratchet (SIGKILL; Windows has no SIGTERM handler) can leave the proxy
-  container and network up to 4 hours or until the next run sweeps them. The
-  proxy image is a mutable tag (`node:24` by default); pin it by digest via
-  `containerImage` if that matters to you.
+  container and network up to 4 hours or until the next run sweeps them.
+- The proxy (sidecar) container — the one holding the credential — runs a
+  digest-pinned `node` image by default, not the mutable `node:24` tag used
+  for the sandbox's own install/test container (`containerImage`): a
+  compromised or silently-replaced upstream tag cannot swap what it runs.
 - A sandbox script can request many large package documents at once and make
   the proxy run out of memory; that fails the run (closed, no leak).
 - **Review status.** The design was reviewed once by an independent,

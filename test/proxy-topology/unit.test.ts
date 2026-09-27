@@ -22,7 +22,8 @@ const input = (over: Partial<ProxyConfigInput> = {}): ProxyConfigInput => ({
 });
 const settings = (runtime: "docker" | "podman"): ContainerSettings => ({ runtime, image: "node:24", rootless: runtime === "podman" });
 const opts = (engine: FakeEngine, over: Partial<TopologyOptions> = {}): TopologyOptions => ({
-  settings: settings(engine.runtime), config: buildProxyConfig(input()), engine, runId: RUN, sweep: false, proxyMain: "/opt/ratchet/dist/sandbox/registry-proxy/main.js", tmpRoot: process.env.TEMP, ...over,
+  // sidecarImage pinned here so these tests don't depend on the real (digest-pinned) DEFAULT_SIDECAR_IMAGE value.
+  settings: settings(engine.runtime), config: buildProxyConfig(input()), engine, runId: RUN, sweep: false, proxyMain: "/opt/ratchet/dist/sandbox/registry-proxy/main.js", tmpRoot: process.env.TEMP, sidecarImage: "node:24", ...over,
 });
 const everything = (e: FakeEngine, extra: unknown[] = []): string => `${e.argvText()}\n${JSON.stringify(extra)}`;
 const noCanary = (text: string): void => {
