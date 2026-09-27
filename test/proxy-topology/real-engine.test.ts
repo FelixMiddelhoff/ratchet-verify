@@ -285,7 +285,7 @@ describe("proxy topology on a real engine", () => {
     });
   });
 
-  test("kill -9 of the parent leaves the sidecar; the next sweep removes it", async (t) => {
+  test("I-3: kill -9 of the parent stops the sidecar process on its own within seconds; the next sweep removes the leftover container/network", async (t) => {
     await guarded(t, async (s, e) => {
       const child = spawn(process.execPath, [HOLD, s.runtime], { env: { ...process.env }, stdio: ["ignore", "pipe", "pipe"] });
       let out = "";
@@ -309,9 +309,17 @@ describe("proxy topology on a real engine", () => {
         child.kill("SIGKILL");
         await exited;
         const orphan = await labelled(e, runId);
-        assert.ok(orphan.containers !== "" && orphan.networks !== "", "kill -9 leaves the sidecar and the network behind (the reason the sweep exists)");
-        const running = (await e.run(["ps", "-q", "--filter", `label=ratchet.run=${runId}`])).output.trim();
-        assert.ok(running !== "", "the sidecar is still running");
+        assert.ok(orphan.containers !== "" && orphan.networks !== "", "kill -9 leaves the sidecar container and network behind: nothing rm's or network-rm's them, the reason the sweep exists");
+        // I-3 (security-review-0.7.md): the sidecar process itself notices its controller's stdin pipe closed (the OS
+        // closes the killed parent's end of it) and stops well under the old 4h MAX_LIFETIME_MS, even though the now
+        // Exited container and the orphan network still need the sweep to actually remove them.
+        let stillRunning = "";
+        for (let i = 0; i < 100; i++) {
+          stillRunning = (await e.run(["ps", "-q", "--filter", `label=ratchet.run=${runId}`])).output.trim();
+          if (stillRunning === "") break;
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        assert.equal(stillRunning, "", "the sidecar should have stopped itself within ~20s of its controller being killed");
         const swept = await sweepStale(e, { nowSeconds: Math.floor(Date.now() / 1000) + 11 * 60, onlyRuns: [runId] }); // only this test's run: a faked clock must not sweep other test files' live topologies
         assert.equal(swept.problems.length, 0, swept.problems.join("; "));
         assert.ok(swept.removedNetworks.length >= 1);

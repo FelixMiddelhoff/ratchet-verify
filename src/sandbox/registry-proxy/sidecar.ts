@@ -47,24 +47,61 @@ export interface SidecarIo {
   setRedactor?: (redact: Redactor) => void;
 }
 
-export type SidecarResult = { ok: true; proxy: RegistryProxy } | { ok: false; exitCode: number };
+export type SidecarResult =
+  | {
+      ok: true;
+      proxy: RegistryProxy;
+      /**
+       * I-3 (security-review-0.7.md): resolves once the controller's stdin pipe closes, at ANY point after startup —
+       * normally only during its own graceful teardown (`AttachedProcess.endStdin`), but also within seconds of the
+       * controller being hard-killed (SIGKILL), since the OS then closes its end of the pipe for it. `main.ts` treats
+       * this the same as SIGTERM: stop the proxy, don't wait for `MAX_LIFETIME_MS`.
+       */
+      controllerGone: Promise<void>;
+    }
+  | { ok: false; exitCode: number };
 
-async function readAll(stdin: SidecarIo["stdin"]): Promise<string | undefined> {
-  const chunks: Buffer[] = [];
+/** Reads stdin up to (and not including) the first `\n` as the config; the SAME underlying iterator is returned so the
+ *  caller can keep watching it afterward (any further data, or its end, both matter — see `controllerGone` above). */
+async function readFirstLine(stdin: SidecarIo["stdin"]): Promise<{ line: string | undefined; iterator: AsyncIterator<Buffer | string> }> {
+  const iterator = stdin[Symbol.asyncIterator]();
+  let buf = "";
   let size = 0;
-  for await (const c of stdin) {
-    const b = typeof c === "string" ? Buffer.from(c) : c;
+  for (;;) {
+    const { value, done } = await iterator.next();
+    // No trailing "\n" before EOF (a caller that closes stdin right after the blob, the old whole-stream protocol):
+    // whatever was buffered is the line. An EOF with nothing at all is the actual failure case.
+    if (done) return { line: buf.length > 0 ? buf : undefined, iterator };
+    const b = typeof value === "string" ? value : (value as Buffer).toString("utf8");
     size += b.length;
-    if (size > MAX_STDIN_BYTES) return undefined;
-    chunks.push(b);
+    if (size > MAX_STDIN_BYTES) {
+      await iterator.return?.();
+      return { line: undefined, iterator };
+    }
+    buf += b;
+    const nl = buf.indexOf("\n");
+    if (nl >= 0) return { line: buf.slice(0, nl), iterator };
   }
-  return Buffer.concat(chunks).toString("utf8");
+}
+
+/** Never resolves until the controller's pipe ends; any data received before then (a heartbeat, or a stray byte) is
+ *  ignored, it only matters that the pipe is still open. Stream errors count as "gone" too, not as a crash. */
+async function watchControllerPipe(iterator: AsyncIterator<Buffer | string>): Promise<void> {
+  try {
+    for (;;) {
+      const { done } = await iterator.next();
+      if (done) return;
+    }
+  } catch {
+    return;
+  }
 }
 
 /**
- * Sidecar boot: refuse credential-like argv/env, read ONE JSON blob (config +
- * credentials) from stdin to EOF, start the proxy, print one ready line.
- * Nothing here logs the blob or any parse detail beyond fixed messages.
+ * Sidecar boot: refuse credential-like argv/env, read ONE JSON blob (config + credentials) as the first line of
+ * stdin, start the proxy, print one ready line. stdin then stays open for the controller's whole run (see
+ * `SidecarResult.controllerGone`, I-3) instead of being read to EOF here. Nothing here logs the blob or any parse
+ * detail beyond fixed messages.
  */
 export async function runSidecar(io: SidecarIo): Promise<SidecarResult> {
   const leaks = findCredentialLeaks(io.argv, io.env);
@@ -73,32 +110,31 @@ export async function runSidecar(io: SidecarIo): Promise<SidecarResult> {
     io.stderr("credentials must arrive on stdin only");
     return { ok: false, exitCode: 2 };
   }
-  const text = await readAll(io.stdin);
-  if (text === undefined) {
-    io.stderr("refusing to start: stdin config too large");
-    return { ok: false, exitCode: 2 };
-  }
+  const first = await readFirstLine(io.stdin);
+  // Every ok:false return from here on must release `first.iterator` (a partially-consumed async iterator otherwise
+  // keeps the underlying stream's handle open, which keeps the process alive with nothing left to read it).
+  const refuse = async (exitCode: number, ...lines: string[]): Promise<SidecarResult> => {
+    for (const l of lines) io.stderr(l);
+    await first.iterator.return?.();
+    return { ok: false, exitCode };
+  };
+  if (first.line === undefined) return refuse(2, "refusing to start: stdin config too large or closed before a config line arrived");
   let config: ProxyConfig;
   try {
-    config = parseConfig(JSON.parse(text));
+    config = parseConfig(JSON.parse(first.line));
   } catch (e) {
     // JSON.parse messages can quote input; only ConfigError text (paths, no values) is shown.
-    io.stderr(e instanceof Error && e.name === "ConfigError" ? `invalid config: ${e.message}` : "invalid config: stdin is not valid JSON");
-    return { ok: false, exitCode: 2 };
+    return refuse(2, e instanceof Error && e.name === "ConfigError" ? `invalid config: ${e.message}` : "invalid config: stdin is not valid JSON");
   }
   const embedded = findConfiguredSecretsInProcess(config, io.argv, io.env);
-  if (embedded.length > 0) {
-    for (const l of embedded) io.stderr(`refusing to start: ${l}`);
-    return { ok: false, exitCode: 2 };
-  }
+  if (embedded.length > 0) return refuse(2, ...embedded.map((l) => `refusing to start: ${l}`));
   const redact = createRedactor(configSecrets(config));
   io.setRedactor?.(redact);
   try {
     const proxy = await startRegistryProxy(config, { auditSink: (line) => io.stderr(line) });
     io.stdout(`${READY_PREFIX} port=${proxy.port}`);
-    return { ok: true, proxy };
+    return { ok: true, proxy, controllerGone: watchControllerPipe(first.iterator) };
   } catch (e) {
-    io.stderr(`failed to start: ${redactError(redact, e)}`);
-    return { ok: false, exitCode: 1 };
+    return refuse(1, `failed to start: ${redactError(redact, e)}`);
   }
 }

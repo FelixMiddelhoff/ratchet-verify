@@ -186,7 +186,8 @@ export async function withProxyTopology<T>(options: TopologyOptions, fn: (topolo
     let stdoutText = "";
     let stderrText = "";
     let readyPort: number | undefined;
-    client = engine.spawnAttached(sidecarStartArgs(sidecarName), sidecarConfig.stdinBlob);
+    // Trailing "\n" delimits the config from whatever the pipe carries afterward (nothing, normally): see AttachedProcess.endStdin.
+    client = engine.spawnAttached(sidecarStartArgs(sidecarName), `${sidecarConfig.stdinBlob}\n`);
     client.onStdoutLine((line) => {
       stdoutText = `${stdoutText}${line}\n`.slice(-4000);
       const m = new RegExp(`^${READY_PREFIX} port=(\\d+)$`).exec(line.trim());
@@ -339,6 +340,7 @@ export async function withProxyTopology<T>(options: TopologyOptions, fn: (topolo
     tornDown = true;
     const problems: string[] = [];
     const ts = now();
+    client?.endStdin();
     client?.kill();
     const names = new Set<string>();
     for (const filter of [`label=${LABEL_RUN}=${runId}`, `network=${networkName}`]) {

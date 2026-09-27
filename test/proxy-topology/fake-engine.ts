@@ -144,6 +144,7 @@ export class FakeEngine implements Engine {
 
 export class FakeAttachedProcess implements AttachedProcess {
   killed = false;
+  stdinEnded = false;
   private out: Array<(l: string) => void> = [];
   private err: Array<(l: string) => void> = [];
   private resolveExit!: (c: number | null) => void;
@@ -159,6 +160,9 @@ export class FakeAttachedProcess implements AttachedProcess {
   kill(): void {
     this.killed = true;
     this.resolveExit(null);
+  }
+  endStdin(): void {
+    this.stdinEnded = true;
   }
   emitOut(line: string): void {
     for (const l of this.out) l(line);
