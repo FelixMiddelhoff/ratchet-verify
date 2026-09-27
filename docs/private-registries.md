@@ -56,10 +56,16 @@ Everything else is refused and counted.
 
 - Only `GET` and `HEAD` for package metadata and tarballs. No publishing, no
   token or user endpoints, no query strings.
-- Only package names that appear in the old or new lockfile or in a manifest,
-  plus dependencies declared by an allowed package (a bisected version can
-  bring new ones; these are reported as "discovered"). This **allowlist is on
-  by default**.
+- Only package names already in the BASE lockfile/manifest (the reviewed,
+  merged state, not the checkout under test) plus the exact packages ratchet
+  is bisecting. This **allowlist is on by default**, but it is not a boundary
+  against whoever authored the pull request: they can already introduce any
+  name as a "changed dependency", since that is the thing being verified. It
+  only stops an unrelated name from being fetched with the token — for
+  example one a hostile *version's* packument declares but nothing under test
+  asked for. Set `registryDiscovery: true` to let such declared-but-untested
+  names through too (reported as "discovered"); it is off by default, so they
+  are denied instead.
 - The credential is attached only to requests for the configured registry
   origin and is dropped on any redirect that leaves it. Redirects to a CDN
   work only for hosts you list in `registryAllowHosts`. Raw tunnels (`CONNECT`,
@@ -121,7 +127,8 @@ Options in `.ratchetrc` (all apply only with `registryAuth`):
 | Option | Default | Meaning |
 |---|---|---|
 | `registryAuth` | `false` | Turn the proxy on (same as `--registry-auth`). Needs container isolation. |
-| `registryAllowlist` | `true` | Only lockfile package names pass. `false` (or `--no-registry-allowlist`) lets any valid package name through; the report then says "package allowlist OFF". |
+| `registryAllowlist` | `true` | Only base-lockfile/manifest and under-test package names pass. `false` (or `--no-registry-allowlist`) lets any valid package name through; the report then says "package allowlist OFF". |
+| `registryDiscovery` | `false` | Also let a transitive dependency an allowed packument declares through (reported as "discovered"). Off by default: such a name is denied instead. |
 | `registryAllowHosts` | `[]` | Extra `host` or `host:port` (port defaults to 443) the proxy itself may fetch a redirect target or tarball URL from (GET/HEAD): a CDN or S3 host for tarballs. The sandbox cannot tunnel to these. |
 | `registryConnectHosts` | `[]` | `host[:port]` the sandbox may open a raw TLS tunnel to (`CONNECT`), for install scripts that download binaries. **A tunnel is open egress to everything on that host** (a shared CDN or object store lets a script upload your source tree to any tenant), so list only hosts that are yours or single-purpose. Capped at 1 GiB per tunnel by default. |
 | `registryDns` | `["1.1.1.1", "9.9.9.9"]` | Resolver IPs the proxy uses for registry host names (it never uses the system resolver). Set your corporate DNS for internal registries. |
@@ -195,11 +202,13 @@ not counted.
 Be honest about what this does and does not give you.
 
 - A malicious install script can still **fetch any package that is on the
-  allowlist** (or discovered). It cannot get the token, the host's files or the
-  internet. The token's own read permissions, not the allowlist, are the real
-  limit on what a hostile PR or dependency can read: the allowlist is built from
-  the (PR-controlled) lockfile and manifests, and discovery adds names a package
-  declares. Use a read-only token scoped to what the project needs.
+  allowlist** (or discovered, if `registryDiscovery` is on). It cannot get the
+  token, the host's files or the internet. The token's own read permissions,
+  not the allowlist, are the real limit on what a hostile PR or dependency can
+  read: the allowlist is anchored on the base ref plus the exact packages
+  under test, but the PR author already controls which packages are "under
+  test" — that part is not a boundary against them. Use a read-only token
+  scoped to what the project needs.
 - Every host in `registryConnectHosts` is open egress (see the option above).
   `registryAllowHosts` alone is not: the sandbox cannot tunnel to those hosts.
 - **Direct network attempts are dropped silently** by the internal network.

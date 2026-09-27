@@ -25,7 +25,7 @@ async function inProject(npmrc: string | undefined, body: (dir: string, home: st
   }
 }
 const base = (dir: string, home: string, config: Partial<Config>, isolation = container, env: NodeJS.ProcessEnv = {}) => ({
-  config: { ...DEFAULT_CONFIG, ...config }, isolation, projectDir: dir, env, homeDir: home, lockfiles: [lock(["a", "@s/b"]), lock(["a", "c"])], manifestNames: ["a", "d"],
+  config: { ...DEFAULT_CONFIG, ...config }, isolation, projectDir: dir, env, homeDir: home, baseLockfileText: lock(["a", "@s/b"]), baseManifestNames: ["a", "d"], candidateNames: ["c"],
 });
 
 describe("withRegistryProxy", () => {
@@ -60,10 +60,19 @@ describe("withRegistryProxy", () => {
       const attach = e.commands.find((c) => c.kind === "attach")!;
       const blob = JSON.parse(attach.stdin!);
       assert.deepEqual(blob.packages.allow, ["@s/b", "a", "c", "d"]);
-      assert.equal(blob.discovery, "audit");
+      assert.equal(blob.discovery, "off");
       assert.ok(attach.stdin!.includes(TOKEN), "the token travels on stdin");
       const elsewhere = JSON.stringify([e.commands.filter((c) => c.kind !== "attach"), logs, result]);
       assert.ok(!elsewhere.includes(TOKEN), "and nowhere else");
+    });
+  });
+
+  test("registryDiscovery on: audit mode in the proxy config", async () => {
+    await inProject(`registry=https://npm.corp.example/api/npm/repo/\n//npm.corp.example/api/npm/repo/:_authToken=\${CORP_TOKEN}\n`, async (dir, home) => {
+      const e = new FakeEngine("docker");
+      await withRegistryProxy({ ...base(dir, home, { registryAuth: true, registryDiscovery: true }, container, { CORP_TOKEN: TOKEN }), engine: e }, async (run) => run);
+      const attach = e.commands.find((c) => c.kind === "attach")!;
+      assert.equal(JSON.parse(attach.stdin!).discovery, "audit");
     });
   });
 

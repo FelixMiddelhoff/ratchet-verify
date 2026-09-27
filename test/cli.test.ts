@@ -52,7 +52,8 @@ test("config: defaults, overrides, and strict validation", () => {
 
 test("registry proxy options: off by default, strictly validated, flags", () => {
   const d = parseConfig("{}");
-  assert.deepEqual([d.registryAuth, d.registryAllowlist, d.registryAllowHosts], [false, true, []]);
+  assert.deepEqual([d.registryAuth, d.registryAllowlist, d.registryDiscovery, d.registryAllowHosts], [false, true, false, []]);
+  assert.throws(() => parseConfig('{"registryDiscovery":0}'), /registryDiscovery/);
   assert.equal(parseConfig('{"registryAuth":true,"registryAllowHosts":["cdn.example.com","s3.example.com:8443"]}').registryAuth, true);
   assert.throws(() => parseConfig('{"registryAuth":"yes"}'), /registryAuth/);
   assert.throws(() => parseConfig('{"registryAllowlist":0}'), /registryAllowlist/);

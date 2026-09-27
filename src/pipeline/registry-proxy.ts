@@ -22,9 +22,12 @@ export interface RegistryProxyOptions {
   isolation: ResolvedIsolation;
   projectDir: string;
   env: NodeJS.ProcessEnv;
-  /** Lockfile states under test (old and new): their package names form the allowlist. */
-  lockfiles: readonly string[];
-  manifestNames: readonly string[];
+  /** Base-ref lockfile text (already reviewed, not the checkout under test): its package names anchor the allowlist. */
+  baseLockfileText: string;
+  /** Base-ref manifest's dependency names (same trust level as baseLockfileText). */
+  baseManifestNames: readonly string[];
+  /** Names of the dependencies actually changed between old and new lockfile: the ones ratchet is testing. */
+  candidateNames: readonly string[];
   /** The project `.npmrc` to take registries and credentials from, when it must not be the working tree's (--base: the base ref's). `{ text: undefined }` = none. */
   projectNpmrc?: { text: string | undefined };
   /** Same for the project `.yarnrc.yml` (yarn berry registry settings, highest precedence when present). */
@@ -80,18 +83,19 @@ export async function withRegistryProxy<T>(options: RegistryProxyOptions, fn: (r
   const files = { home, read: (path: string): string | undefined => { try { return readFileSync(path, "utf8"); } catch { return undefined; } } };
   const sourced = sourceRegistries(layers, options.env, config.registryPrivateHosts, files);
   const allowlistOn = config.registryAllowlist;
-  const names = allowedPackageNames(options.lockfiles, options.manifestNames);
+  const names = allowedPackageNames(options.baseLockfileText, options.baseManifestNames, options.candidateNames);
   const built = buildProxyConfig({
     registries: sourced.registries,
     allowHosts: config.registryAllowHosts,
     connectHosts: config.registryConnectHosts,
     packages: allowlistOn ? { allow: names } : { allowAll: true },
-    discovery: "audit",
+    discovery: config.registryDiscovery ? "audit" : "off",
     dns: config.registryDns,
     limits: {},
   });
   for (const note of sourced.notes) options.log?.(`registry proxy: ${note}`);
   if (!allowlistOn) options.log?.("registry proxy: package allowlist is OFF (registryAllowlist=false)");
+  if (allowlistOn && !config.registryDiscovery) options.log?.("registry proxy: package discovery is OFF (registryDiscovery=false): a transitive dependency not already in the base lockfile/manifest or under test is denied, not just audited");
 
   const caFile = config.registryCaFile === undefined ? undefined : isAbsolute(config.registryCaFile) ? config.registryCaFile : resolve(options.projectDir, config.registryCaFile);
   return withProxyTopology({ settings: isolation.container, config: built, engine: options.engine, extraCaFile: caFile, log: options.log }, async (topology) => {

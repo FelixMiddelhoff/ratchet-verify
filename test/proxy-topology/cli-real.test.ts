@@ -68,7 +68,7 @@ describe("ratchet --registry-auth on a real engine", () => {
         const locks: Record<string, string> = {};
         const genConfig = buildProxyConfig({
           registries: [{ id: "main", upstream: `https://${ip}:8443`, allowPrivateAddresses: true, credential: new Credential("bearer", TOKEN) }],
-          packages: { allow: allowedPackageNames([], ["left-pad"]) },
+          packages: { allow: allowedPackageNames("", [], ["left-pad"]) },
           dns: ["1.1.1.1"],
         });
         await withProxyTopology({ settings: s, config: genConfig, engine: e, extraCaFile: certFile }, async (topo) => {
