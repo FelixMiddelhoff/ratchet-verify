@@ -280,7 +280,9 @@ describe("sidecar entrypoint", () => {
     let err = "";
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (err += d));
-    child.stdin.end(goodBlob({ listen: { host: "127.0.0.1", port: 0 } }));
+    // Written but not ended: the real controller (proxy-topology.ts) keeps stdin open for the sidecar's whole life
+    // (I-3) and only closing it, on purpose, is what tells the sidecar its controller is gone.
+    child.stdin.write(`${goodBlob({ listen: { host: "127.0.0.1", port: 0 } })}\n`);
     const port = await new Promise<number>((resolve, reject) => {
       const t = setTimeout(() => reject(new Error(`no ready line; stderr=${err}`)), 10_000);
       const check = (): void => {
@@ -301,6 +303,32 @@ describe("sidecar entrypoint", () => {
     } finally {
       child.kill();
     }
+  });
+
+  test("I-3: built main.js stops itself when its controller's stdin pipe closes, without waiting for a signal", async () => {
+    const main = fileURLToPath(new URL("../../src/sandbox/registry-proxy/main.js", import.meta.url));
+    const env: Record<string, string> = process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {};
+    const child = spawn(process.execPath, [main], { env, stdio: ["pipe", "pipe", "pipe"] });
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (d) => (out += d));
+    child.stderr.on("data", (d) => (err += d));
+    child.stdin.write(`${goodBlob({ listen: { host: "127.0.0.1", port: 0 } })}\n`);
+    await new Promise<void>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error(`no ready line; stderr=${err}`)), 10_000);
+      child.stdout.on("data", () => {
+        if (new RegExp(`^${READY_PREFIX} port=`, "m").test(out)) {
+          clearTimeout(t);
+          resolve();
+        }
+      });
+    });
+    const exitCode = await new Promise<number | null>((resolve) => {
+      child.on("exit", resolve);
+      child.stdin.end(); // no SIGTERM/SIGINT sent: only the pipe closes
+    });
+    assert.equal(exitCode, 0);
+    assert.match(err, /controller pipe closed, stopping/);
   });
 
   test("built main.js refuses a credential in its environment (exit 2, nothing on stdout)", async () => {

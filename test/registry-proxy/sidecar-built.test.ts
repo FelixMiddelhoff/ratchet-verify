@@ -59,7 +59,9 @@ async function startSidecar(opts: { stdin: string; env: NodeJS.ProcessEnv; nodeA
   child.stderr?.on("data", (d: Buffer) => (err += d.toString()));
   const exited = new Promise<number | null>((r) => child.once("exit", (code) => r(code)));
   child.stdin?.on("error", () => undefined); // the child may refuse and exit before reading everything
-  child.stdin?.end(opts.stdin);
+  // Written but not ended: the real controller keeps stdin open for the sidecar's whole life (I-3) and closing it
+  // is itself a shutdown signal, which these tests don't want to trigger before they are done with the sidecar.
+  child.stdin?.write(`${opts.stdin}\n`);
   let port = 0;
   for (let i = 0; i < 100 && port === 0; i++) {
     const m = new RegExp(`${READY_PREFIX} port=(\\d+)`).exec(out);

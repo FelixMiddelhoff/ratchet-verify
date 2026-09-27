@@ -8,6 +8,14 @@ export interface AttachedProcess {
   onStderrLine(listener: (line: string) => void): void;
   /** Kills the CLIENT process (the container is removed separately with `rm -f`). */
   kill(): void;
+  /**
+   * Ends the client's stdin (graceful teardown). I-3 (security-review-0.7.md): stdin is deliberately left OPEN after the
+   * initial config write (see `spawnAttached`) so that if ratchet itself is hard-killed, the OS closes ratchet's end of
+   * the pipe, the client sees EOF, forwards it into the container, and the sidecar (watching for exactly that) shuts
+   * itself down within seconds instead of surviving up to `MAX_LIFETIME_MS`. A normal run reaches the same EOF here,
+   * on purpose, as part of its own teardown.
+   */
+  endStdin(): void;
   /** Resolves with the client's exit code once it ended. */
   readonly exited: Promise<number | null>;
 }
@@ -23,7 +31,7 @@ export interface Engine {
   readonly runtime: ContainerRuntime;
   /** Runs one engine command to completion. Never throws for a non-zero exit. */
   run(args: readonly string[], options?: RunOptions): Promise<RunResult>;
-  /** Starts a long-lived client and pipes `stdin` into it (then closes stdin). */
+  /** Starts a long-lived client and writes `stdin` into it, WITHOUT closing it: see `AttachedProcess.endStdin`. */
   spawnAttached(args: readonly string[], stdin: string): AttachedProcess;
 }
 
@@ -99,7 +107,8 @@ export function createRealEngine(runtime: ContainerRuntime): Engine {
       child.stdout.on("data", lineSplitter(out));
       child.stderr.on("data", lineSplitter(err));
       child.stdin.on("error", () => undefined);
-      child.stdin.end(stdin);
+      // Written, but NOT ended: see AttachedProcess.endStdin (I-3).
+      child.stdin.write(stdin);
       const exited = new Promise<number | null>((resolve) => {
         child.on("error", () => resolve(null));
         child.on("close", (code) => resolve(code));
@@ -108,6 +117,7 @@ export function createRealEngine(runtime: ContainerRuntime): Engine {
         onStdoutLine: (l) => void out.push(l),
         onStderrLine: (l) => void err.push(l),
         kill: () => killProcess(child.pid),
+        endStdin: () => child.stdin.end(),
         exited,
       };
     },

@@ -240,8 +240,13 @@ Be honest about what this does and does not give you.
 - `${VAR}` in an `.npmrc`/`.yarnrc.yml` from the base ref expands any
   environment variable of the machine running ratchet into a credential sent to
   that registry. Review changes to those files like changes to a CI workflow.
-- A killed ratchet (SIGKILL; Windows has no SIGTERM handler) can leave the proxy
-  container and network up to 4 hours or until the next run sweeps them.
+- A killed ratchet (SIGKILL; Windows has no SIGTERM handler) closes its end of
+  the pipe it holds open to the proxy sidecar for exactly this reason: the
+  sidecar process notices within seconds and stops itself (dropping the
+  credential from memory), well under the 4-hour backstop it used to rely on.
+  The now-stopped container and its network are not removed by this — that
+  still needs the next run's sweep, or a manual `podman`/`docker rm -f` and
+  `network rm` by the run's `ratchet.run=<id>` label.
 - The proxy (sidecar) container — the one holding the credential — runs a
   digest-pinned `node` image by default, not the mutable `node:24` tag used
   for the sandbox's own install/test container (`containerImage`): a
