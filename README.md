@@ -75,7 +75,8 @@ with the one on `main`. Exit code `0` means ok, `1` means a verdict at or above
 
 More in [docs/](docs/README.md): a [setup guide](docs/setup.md) (zero to a protected
 repository, step by step), a [two-minute demo and tutorial](docs/tutorial.md)
-with real output, a [private-registry tutorial](docs/tutorial-private-registries.md), what every [verdict and caveat means](docs/verdicts.md),
+with real output, a [monorepo/workspaces tutorial](docs/tutorial-monorepo.md), a
+[private-registry tutorial](docs/tutorial-private-registries.md), what every [verdict and caveat means](docs/verdicts.md),
 [CI recipes](docs/ci.md) (GitHub Action, Dependabot/Renovate, other systems),
 the [configuration reference](docs/configuration.md), the
 [report formats](docs/report-format.md) and [troubleshooting](docs/troubleshooting.md).
@@ -237,7 +238,8 @@ machines either way. Details: [docs/configuration.md](docs/configuration.md#isol
   entries are skipped and several versions of one name are tracked per range
   (pnpm: per major, the root's own version keeps the plain path); pnpm peer-dependency
   suffixes are stripped; Python and other ecosystems don't exist yet.
-- **Workspaces (monorepos) are supported with limits.** ratchet reads
+- **Workspaces (monorepos) are supported with limits.** Walk-through:
+  [docs/tutorial-monorepo.md](docs/tutorial-monorepo.md). ratchet reads
   package.json `workspaces` (npm, yarn classic and berry) and
   `pnpm-workspace.yaml`. A dependency is direct when *any* manifest (root or
   workspace) names it, and each verdict lists which workspaces declare it and
