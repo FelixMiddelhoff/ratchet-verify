@@ -16,7 +16,7 @@ function fakeSandbox(dir: string, results: Record<string, RunResult>): PythonSan
     calls.push(call);
     return results[call.join(" ")] ?? bad(`unexpected call: ${call.join(" ")}`);
   };
-  return { dir, run, calls };
+  return { dir, isolation: "temp-dir", run, calls };
 }
 
 test("detects uv vs poetry from lockfile presence, and neither", async () => {
