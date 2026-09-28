@@ -10,9 +10,9 @@ bolted onto the npm core (Python's tooling, lockfile formats and package index a
 enough to warrant that). It is not yet published to npm as its own package — see
 [Installing it](#installing-it) below for what that means in practice today.
 
-For the module's own build/scope/decision history (phase-by-phase, with links to the PRs that
-built it), see [python-module/README.md](../python-module/README.md). This page is the
-user-facing "what is it, how do I run it" guide.
+This page is the user-facing "what is it, how do I run it" guide. For build/scope/decision
+history, see issue [#15](https://github.com/FelixMiddelhoff/ratchet-verify/issues/15) and
+[CHANGELOG.md](../CHANGELOG.md).
 
 ## What it checks
 
@@ -49,8 +49,7 @@ The result is one of three verdicts, same meaning as the npm core's:
 ## Installing it
 
 This module is checked into the `ratchet-verify` repository but is **not yet published to npm
-as its own package** (`python-module/README.md` tracks this as an open item). Two ways to run
-it today:
+as its own package**. Two ways to run it today:
 
 **Directly from a checkout, no build needed:**
 
@@ -253,5 +252,4 @@ is a known gap, not a design decision).
 - **Environment markers** in `requirements.txt` (`; python_version < "3.9"`) are stripped, not
   evaluated — there's no per-environment resolution concept in this module.
 
-Found something else confusing or wrong? [python-module/README.md](../python-module/README.md)
-has the full decision history if you want the "why", or open an issue.
+Found something else confusing or wrong? Open an issue.

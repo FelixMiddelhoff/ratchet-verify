@@ -389,7 +389,7 @@ duplicate effort; small fixes can go straight to a pull request.
 
 - **Other ecosystems**, as separate modules rather than bolted onto the npm
   core — Python (`uv`/`poetry`/pip) shipped this way, see
-  [python-module/README.md](python-module/README.md).
+  [docs/python-module.md](docs/python-module.md).
 - **Auto-merge / auto-PR** flows that use the verdict as the gate (deliberately
   out of the first release).
 - **Ecosystem-aware fixes**, e.g. suggesting the last known-good version when a
