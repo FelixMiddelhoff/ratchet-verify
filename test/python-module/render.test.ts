@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { renderPythonText } from "../../python-module/render.js";
+import { renderPythonJson, renderPythonText } from "../../python-module/render.js";
 import type { PythonReport } from "../../python-module/report.js";
 
 test("empty report renders a plain 'no changes' line", () => {
@@ -20,4 +20,9 @@ test("renders status, summary, caveats and notes for each verdict", () => {
   assert.match(text, /requests \(2\.31\.0 -> 2\.32\.3\): SAFE/);
   assert.match(text, /caveat: no changelog was found/);
   assert.match(text, /note: some note/);
+});
+
+test("renderPythonJson round-trips the report exactly", () => {
+  const report: PythonReport = { schemaVersion: 1, overall: "broken", verdicts: [] };
+  assert.deepEqual(JSON.parse(renderPythonJson(report)), report);
 });

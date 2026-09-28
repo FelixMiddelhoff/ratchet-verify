@@ -1,6 +1,11 @@
 import type { PythonReport } from "./report.js";
 
-/** Text renderer for a PythonReport. JSON/SARIF renderers are a documented follow-up (python-module/README.md). */
+/** SARIF is a documented follow-up (python-module/README.md); JSON and text are done. */
+export function renderPythonJson(report: PythonReport): string {
+  return JSON.stringify(report, null, 2);
+}
+
+/** Text renderer for a PythonReport. */
 export function renderPythonText(report: PythonReport): string {
   if (report.verdicts.length === 0) return "ratchet: no dependency changes between the two lockfiles.";
   const lines = [`ratchet: overall ${report.overall}`, ""];
