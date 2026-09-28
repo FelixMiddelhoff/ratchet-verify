@@ -11,8 +11,10 @@ enough to warrant that). It isn't a separate npm package — it ships as part of
 `ratchet-verify` package (from v0.9.0 onward), adding a second `ratchet-python` bin alongside
 `ratchet`/`ratchet-verify`. See [Installing it](#installing-it) below.
 
-This page is the user-facing "what is it, how do I run it" guide. For build/scope/decision
-history, see issue [#15](https://github.com/FelixMiddelhoff/ratchet-verify/issues/15) and
+This page is the user-facing "what is it, how do I run it" guide. For a two-minute worked
+example with real command output, see [tutorial-python.md](tutorial-python.md). For
+build/scope/decision history, see issue
+[#15](https://github.com/FelixMiddelhoff/ratchet-verify/issues/15) and
 [CHANGELOG.md](../CHANGELOG.md).
 
 ## What it checks
