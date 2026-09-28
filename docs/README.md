@@ -11,4 +11,5 @@
 | Look up every private-registry option, guarantee and limit | [private-registries.md](private-registries.md) |
 | Read its output from a script, dashboard or code scanning | [report-format.md](report-format.md) |
 | Fix an error message or a surprising verdict | [troubleshooting.md](troubleshooting.md) |
+| Verify a Python dependency bump (`uv`/`poetry`/pip) | [python-module.md](python-module.md) |
 | Contribute | the "Help wanted" section of the [README](../README.md#help-wanted) |

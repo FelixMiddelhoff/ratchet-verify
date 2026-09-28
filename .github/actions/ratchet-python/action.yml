@@ -20,11 +20,11 @@ inputs:
   format:
     description: 'Report format: text (default), json or sarif.'
     default: text
-  ratchet-ref:
-    description: git ref of FelixMiddelhoff/ratchet-verify to check out and run (this module is not yet published to npm — see python-module/README.md).
-    default: main
+  ratchet-version:
+    description: npm version or tag of ratchet-verify to run (ratchet-python ships in the same package as the npm core, from v0.9.0 onward).
+    default: latest
   node-version:
-    description: Node.js version used to build and run ratchet-python.
+    description: Node.js version used to run ratchet-python.
     default: "24"
 
 outputs:
@@ -38,21 +38,9 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v5
-      with:
-        repository: FelixMiddelhoff/ratchet-verify
-        ref: ${{ inputs.ratchet-ref }}
-        path: .ratchet-python-tool
-
     - uses: actions/setup-node@v7
       with:
         node-version: ${{ inputs.node-version }}
-
-    - shell: bash
-      working-directory: .ratchet-python-tool
-      run: |
-        npm ci
-        npm run build
 
     # GITHUB_TOKEN raises the changelog fetcher's GitHub API rate limit; the sandbox that installs
     # candidate versions gets a scrubbed environment and never sees it.
@@ -65,13 +53,14 @@ runs:
         RATCHET_LOCKFILE_NAME: ${{ inputs.lockfile-name }}
         RATCHET_CONTAINER_IMAGE: ${{ inputs.container-image }}
         RATCHET_FORMAT: ${{ inputs.format }}
+        RATCHET_VERSION: ${{ inputs.ratchet-version }}
       run: |
         report_file="${RUNNER_TEMP}/ratchet-python-report.txt"
         extra=()
         if [ -n "${RATCHET_LOCKFILE_NAME}" ]; then extra+=(--lockfile-name "${RATCHET_LOCKFILE_NAME}"); fi
         if [ -n "${RATCHET_CONTAINER_IMAGE}" ]; then extra+=(--container "${RATCHET_CONTAINER_IMAGE}"); fi
         set +e
-        node .ratchet-python-tool/dist-python/python-module/cli.js \
+        npx --yes --package "ratchet-verify@${RATCHET_VERSION}" -- ratchet-python \
           --project "${RATCHET_PROJECT_DIR}" --base "${RATCHET_BASE}" --format "${RATCHET_FORMAT}" "${extra[@]}" \
           > "${report_file}"
         code=$?
