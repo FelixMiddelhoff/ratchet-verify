@@ -12,6 +12,7 @@ export function renderPythonText(report: PythonReport): string {
     for (const e of v.evidence) {
       if (e.kind === "bisect") lines.push(`  evidence: broke between ${e.lastGood} and ${e.firstBad}${e.exact ? " (exact)" : " (narrowed)"}${e.unconfirmed ? ", unconfirmed" : ""}`);
       else if (e.kind === "test-failure") lines.push(`  evidence: ${e.outcome}`);
+      else if (e.kind === "call-site") lines.push(`  evidence: ${e.file}:${e.line} ${e.symbol} — ${e.reason} (${e.changelogVersion})`);
       else lines.push(`  evidence: ${e.reason}`);
     }
     lines.push("");

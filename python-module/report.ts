@@ -7,16 +7,19 @@
  */
 import type { PythonBisectResult } from "./bisect.js";
 import type { PythonChangelogResult } from "./changelog.js";
+import type { PythonMatchResult } from "./match.js";
 import { describeVersions } from "./version.js";
 import type { PythonDependencyChange } from "./lockfile.js";
 import type { PythonTestOutcome } from "./testrun.js";
+import type { PythonUsageScan } from "./usage.js";
 
 export type PythonVerdictStatus = "safe" | "risky" | "broken";
 
 export type PythonEvidence =
   | { kind: "no-tests"; reason: string }
   | { kind: "test-failure"; outcome: string; output: string }
-  | { kind: "bisect"; exact: boolean; unstable: boolean; unconfirmed: boolean; lastGood: string; firstBad: string; ambiguousWith: string[]; installs: number; failingOutput: string };
+  | { kind: "bisect"; exact: boolean; unstable: boolean; unconfirmed: boolean; lastGood: string; firstBad: string; ambiguousWith: string[]; installs: number; failingOutput: string }
+  | { kind: "call-site"; symbol: string; file: string; line: number; snippet: string; changelogVersion: string; changelogExcerpt: string; matchConfidence: "high" | "medium"; reason: string };
 
 export interface PythonDependencyVerdict {
   name: string;
@@ -41,6 +44,8 @@ export interface PythonDependencyAssessment {
   /** Shared by every dependency in one bump: the project's suite runs once. */
   test: PythonTestOutcome;
   changelog: PythonChangelogResult;
+  usage: PythonUsageScan;
+  match: PythonMatchResult;
   /** Present only when this dependency was bisected. */
   bisect?: PythonBisectResult;
 }
@@ -65,12 +70,26 @@ export function judgePython(a: PythonDependencyAssessment): PythonDependencyVerd
   if (test.status === "blamed-elsewhere") return unverified(base, `the suite fails because of ${test.culprits.join(", ")}; this dependency was not tested on its own`);
   if (test.status !== "passed") return broken(base, a, test);
 
+  const evidence = callSiteEvidence(a.match);
+  if (evidence.length > 0) {
+    const count = evidence.length;
+    return {
+      ...base,
+      status: "risky",
+      confidence: "full",
+      summary: `tests pass, but the changelog names ${count} symbol use${count === 1 ? "" : "s"} in your code as breaking`,
+      evidence,
+    };
+  }
+
   const caveats = [...base.caveats];
   const notes = [...base.notes];
   if (!isNew && !isRemoved) {
     if (a.changelog.source === "none") caveats.push("no changelog was found; this is a tests-only verdict");
     else if (a.changelog.missingVersions.length > 0) caveats.push(`no changelog notes for ${describeVersions(a.changelog.missingVersions)}`);
+    if (a.match.majorBoundary) caveats.push("major version bump: breaking changes are allowed even if the changelog does not list them");
   }
+  if (a.usage.unparsed.length > 0) caveats.push(`usage scan incomplete: could not parse ${a.usage.unparsed.map((f) => f.file).join(", ")}`);
   if (isNew) notes.push("new dependency: no earlier version to compare against");
   notes.push(...a.changelog.notes);
 
@@ -84,6 +103,22 @@ export function judgePython(a: PythonDependencyAssessment): PythonDependencyVerd
     caveats,
     notes,
   };
+}
+
+function callSiteEvidence(match: PythonMatchResult): PythonEvidence[] {
+  return match.hits
+    .filter((h) => h.confidence !== "low")
+    .map((h) => ({
+      kind: "call-site" as const,
+      symbol: h.site.symbol,
+      file: h.site.file,
+      line: h.site.line,
+      snippet: h.site.snippet,
+      changelogVersion: h.version,
+      changelogExcerpt: h.excerpt,
+      matchConfidence: h.confidence as "high" | "medium",
+      reason: h.reason,
+    }));
 }
 
 type PartialBase = Pick<PythonDependencyVerdict, "name" | "oldVersion" | "newVersion" | "caveats" | "notes">;

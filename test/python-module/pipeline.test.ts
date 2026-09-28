@@ -36,6 +36,10 @@ function deps(overrides: Partial<PythonPipelineDeps> = {}): PythonPipelineDeps &
       calls.push(`fetchChangelog:${request.name}`);
       return changelog;
     },
+    scanUsage: async (packageName: string) => {
+      calls.push(`scanUsage:${packageName}`);
+      return { sites: [], unparsed: [] };
+    },
     ...overrides,
     calls,
   } as PythonPipelineDeps & { calls: string[] };
@@ -53,7 +57,7 @@ test("passing suite -> safe, single testLockfile call reused for the changed dep
   const report = await runPythonPipeline({ oldLockfileText: OLD_LOCK, newLockfileText: NEW_LOCK }, d);
   assert.equal(report.overall, "safe");
   assert.equal(report.verdicts[0]!.name, "requests");
-  assert.deepEqual(d.calls, ["fetchChangelog:requests", "testLockfile:new"]);
+  assert.deepEqual(d.calls, ["scanUsage:requests", "fetchChangelog:requests", "testLockfile:new"]);
 });
 
 test("failing suite, baseline also fails -> baseline-failing, no bisection attempted", async () => {
