@@ -89,7 +89,8 @@ full CLI/config/Action reference: [docs/python-module.md](docs/python-module.md)
 
 More in [docs/](docs/README.md): a [setup guide](docs/setup.md) (zero to a protected
 repository, step by step), a [two-minute demo and tutorial](docs/tutorial.md)
-with real output, a [private-registry tutorial](docs/tutorial-private-registries.md), what every [verdict and caveat means](docs/verdicts.md),
+with real output, a [monorepo/workspaces tutorial](docs/tutorial-monorepo.md), a
+[private-registry tutorial](docs/tutorial-private-registries.md), what every [verdict and caveat means](docs/verdicts.md),
 [CI recipes](docs/ci.md) (GitHub Action, Dependabot/Renovate, other systems),
 the [configuration reference](docs/configuration.md), the
 [report formats](docs/report-format.md) and [troubleshooting](docs/troubleshooting.md).
@@ -262,7 +263,8 @@ machines either way. Details: [docs/configuration.md](docs/configuration.md#isol
   suffixes are stripped. Python has its own module (`uv.lock`, `poetry.lock`,
   hash-pinned `requirements.txt` — see [docs/python-module.md](docs/python-module.md));
   other ecosystems don't exist yet.
-- **Workspaces (monorepos) are supported with limits.** ratchet reads
+- **Workspaces (monorepos) are supported with limits.** Walk-through:
+  [docs/tutorial-monorepo.md](docs/tutorial-monorepo.md). ratchet reads
   package.json `workspaces` (npm, yarn classic and berry) and
   `pnpm-workspace.yaml`. A dependency is direct when *any* manifest (root or
   workspace) names it, and each verdict lists which workspaces declare it and
