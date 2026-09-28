@@ -7,7 +7,8 @@ import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { fetchPythonChangelog, type PythonChangelogRequest, type PythonChangelogResult } from "./changelog.js";
 import type { PythonPipelineDeps } from "./pipeline.js";
-import { withPythonSandbox } from "./sandbox.js";
+import type { PythonContainerSettings } from "./container.js";
+import { withPythonSandbox, type PythonSandbox } from "./sandbox.js";
 import { detectPythonManager, installAndTestPython, type PythonManager, type PythonTestOutcome } from "./testrun.js";
 import { scanPythonUsage, type PythonUsageScan } from "./usage.js";
 
@@ -19,6 +20,8 @@ export interface RealPythonDepsOptions {
   installTimeoutMs?: number;
   githubToken?: string;
   pythonPath?: string;
+  /** Run installs and tests in a container instead of directly on the host. */
+  container?: PythonContainerSettings;
 }
 
 const NOT_SCANNED = new Set([".git", ".venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", "node_modules"]);
@@ -66,9 +69,12 @@ async function readPythonFiles(root: string): Promise<{ path: string; text: stri
 async function runInSandbox(
   options: RealPythonDepsOptions,
   lockfileText: string | undefined,
-  work: (sandbox: { dir: string; run: (cmd: string, args: string[], timeoutMs: number) => Promise<import("../src/sandbox/exec.js").RunResult> }) => Promise<PythonTestOutcome>,
+  work: (sandbox: PythonSandbox) => Promise<PythonTestOutcome>,
 ): Promise<PythonTestOutcome> {
-  return withPythonSandbox({ projectDir: options.projectDir, lockfile: lockfileText !== undefined ? { name: options.lockfileName, content: lockfileText } : undefined }, work);
+  return withPythonSandbox(
+    { projectDir: options.projectDir, lockfile: lockfileText !== undefined ? { name: options.lockfileName, content: lockfileText } : undefined, container: options.container },
+    work,
+  );
 }
 
 function installArgs(manager: PythonManager): [string, string[]] {

@@ -1,12 +1,12 @@
 /**
- * Phase 5 of #15: isolated environment to install a candidate lockfile state and run tests,
- * without touching the working tree. v1 scope is temp-dir isolation only (env allowlist +
- * redirected home), the same tier the npm core shipped first before container mode (#1)
- * followed later — container mode for Python is a documented follow-up, not v1. Reuses the
- * npm core's generic (not npm-specific) pieces directly: `runCommand`/`RunResult`
- * (src/sandbox/exec.ts), `buildSandboxEnv`/`sandboxPaths` (src/sandbox/env.ts — HOME/XDG
- * redirection already isolates pip/poetry/uv config lookup, no python-specific change
- * needed), and `confinedPath` (src/sandbox/confine.ts).
+ * Phase 5 of #15 + v2 item 2: isolated environment to install a candidate lockfile state and
+ * run tests, without touching the working tree. Reuses the npm core's generic (not
+ * npm-specific) pieces directly: `runCommand`/`RunResult` (src/sandbox/exec.ts),
+ * `buildSandboxEnv`/`sandboxPaths` (src/sandbox/env.ts — HOME/XDG redirection already
+ * isolates pip/poetry/uv config lookup, no python-specific change needed), and
+ * `confinedPath` (src/sandbox/confine.ts). Container mode (v2) uses `container.ts`'s
+ * Python-flavored run-argument builder, since the npm core's `buildRunArgs` hard-codes
+ * npm's own environment with no injection point.
  */
 import { cp, lstat, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,10 +14,14 @@ import { basename, dirname, join, sep } from "node:path";
 import { confinedPath } from "../src/sandbox/confine.js";
 import { buildSandboxEnv, sandboxPaths } from "../src/sandbox/env.js";
 import { runCommand, type RunResult } from "../src/sandbox/exec.js";
+import { runPythonInContainer, type PythonContainerSettings } from "./container.js";
+
+export type PythonIsolationLevel = "temp-dir" | "container";
 
 export interface PythonSandbox {
   readonly dir: string;
-  run(command: string, args: string[], timeoutMs: number): Promise<RunResult>;
+  readonly isolation: PythonIsolationLevel;
+  run(command: string, args: string[], timeoutMs: number, phase?: { offline?: boolean }): Promise<RunResult>;
 }
 
 export interface PythonSandboxOptions {
@@ -28,6 +32,8 @@ export interface PythonSandboxOptions {
   files?: Record<string, string | null>;
   /** Environment to filter; defaults to the real one. Exposed for tests. */
   sourceEnv?: NodeJS.ProcessEnv;
+  /** Run installs and tests in a container instead of directly on the host. */
+  container?: PythonContainerSettings;
 }
 
 const NOT_COPIED = new Set([".git", ".venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache"]);
@@ -49,12 +55,20 @@ export async function withPythonSandbox<T>(options: PythonSandboxOptions, work: 
     for (const [file, content] of Object.entries(options.files ?? {})) await applyFile(dir, file, content);
     if (options.lockfile) await writeFile(join(dir, options.lockfile.name), options.lockfile.content);
 
-    const env = buildSandboxEnv(paths, options.sourceEnv);
-    const sandbox: PythonSandbox = { dir, run: (command, args, timeoutMs) => runCommand({ command, args, cwd: dir, env, timeoutMs }) };
+    const sandbox = options.container ? containerSandbox(dir, root, options.container) : hostSandbox(dir, paths, options);
     return await work(sandbox);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+}
+
+function hostSandbox(dir: string, paths: ReturnType<typeof sandboxPaths>, options: PythonSandboxOptions): PythonSandbox {
+  const env = buildSandboxEnv(paths, options.sourceEnv);
+  return { dir, isolation: "temp-dir", run: (command, args, timeoutMs) => runCommand({ command, args, cwd: dir, env, timeoutMs }) };
+}
+
+function containerSandbox(dir: string, root: string, settings: PythonContainerSettings): PythonSandbox {
+  return { dir, isolation: "container", run: (command, args, timeoutMs, phase) => runPythonInContainer(settings, root, command, args, timeoutMs, undefined, phase) };
 }
 
 /**
