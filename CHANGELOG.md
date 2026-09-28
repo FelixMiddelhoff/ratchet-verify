@@ -3,6 +3,12 @@
 All notable changes to this project are documented here, in
 [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [Unreleased]
+
+### Added
+- **Python ecosystem module** (`python-module/`, #15), a separate module alongside the npm core rather than bolted onto it: `uv.lock`/`poetry.lock` diffing, PEP 503 name normalization, PyPI JSON API changelog fetch with GitHub `project_urls` follow-through, `ast`-based static usage scan (inline driver, no JS-side Python parser dependency), a breaking-change matcher (import sites vs. changelog text, reusing `src/match/classify.ts` directly), sandboxed install+test run (temp-dir by default, or docker/podman container isolation via `--container <image>`), PEP 440 version bisection, and a CLI (`node --experimental-strip-types python-module/cli.ts`, or built as the `ratchet-python` bin via `npm run build`). Also reads hash-pinned `requirements.txt` (`pip-compile` output only), auto-detects the test command (pytest config files/sections, Django's `manage.py`) before falling back to `pytest`, supports `--base <git-ref>`, a `.ratchetrc.python` config file, and `--format text|json|sarif`. A GitHub Action lives at `.github/actions/ratchet-python/`. Full scope, phase history and known gaps (no PR-comment posting yet, not published to npm as its own release) are documented in [python-module/README.md](python-module/README.md).
+- Corpus: real historical case for node-fetch 2.6.7 -> 3.3.2 (v3 dropped CommonJS support), closing #10.
+
 ## [0.8.0] - 2026-09-27
 
 ### Security

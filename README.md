@@ -236,7 +236,9 @@ machines either way. Details: [docs/configuration.md](docs/configuration.md#isol
   (`pnpm-lock.yaml`, 5.x/6.x/9.x) only.** For yarn and pnpm, git/file/link/workspace
   entries are skipped and several versions of one name are tracked per range
   (pnpm: per major, the root's own version keeps the plain path); pnpm peer-dependency
-  suffixes are stripped; Python and other ecosystems don't exist yet.
+  suffixes are stripped. Python has its own module (`uv.lock`, `poetry.lock`,
+  hash-pinned `requirements.txt` — see [docs/python-module.md](docs/python-module.md));
+  other ecosystems don't exist yet.
 - **Workspaces (monorepos) are supported with limits.** ratchet reads
   package.json `workspaces` (npm, yarn classic and berry) and
   `pnpm-workspace.yaml`. A dependency is direct when *any* manifest (root or
@@ -385,8 +387,9 @@ duplicate effort; small fixes can go straight to a pull request.
 
 ### Bigger ideas
 
-- **Other ecosystems** (Python with pip/poetry first), as separate modules
-  rather than bolted onto the npm core.
+- **Other ecosystems**, as separate modules rather than bolted onto the npm
+  core — Python (`uv`/`poetry`/pip) shipped this way, see
+  [python-module/README.md](python-module/README.md).
 - **Auto-merge / auto-PR** flows that use the verdict as the gate (deliberately
   out of the first release).
 - **Ecosystem-aware fixes**, e.g. suggesting the last known-good version when a

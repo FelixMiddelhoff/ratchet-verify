@@ -1,7 +1,11 @@
 # ratchet-verify: Python ecosystem module
 
+**Looking for how to use it?** See [docs/python-module.md](../docs/python-module.md) — this
+file is the build/design history (phase-by-phase decisions, what's reused from the npm core
+and why, known gaps), not a user guide.
+
 Tracks issue #15. All 7 phases below are done (v1). This file starts as the phase-1 design
-lock (posted as a comment on #15) and now doubles as the module's docs.
+lock (posted as a comment on #15) and now doubles as the module's own decision log.
 
 ## Usage
 
