@@ -64,6 +64,12 @@ test("ensurePythonManagerInImage: passes when found, throws an actionable messag
   await assert.rejects(ensurePythonManagerInImage(docker, "poetry", fakeEngine(() => fail()).exec), /does not ship poetry/);
 });
 
+test("ensurePythonManagerInImage: pip is assumed present, never probed for", async () => {
+  const engine = fakeEngine(() => fail());
+  await assert.doesNotReject(ensurePythonManagerInImage(docker, "pip", engine.exec));
+  assert.equal(engine.calls.length, 0);
+});
+
 // ---- Real engine (skipped where docker/podman is unavailable) ----
 
 const engine = await detectRuntime("auto");

@@ -30,9 +30,11 @@ const probe = (runtime: ContainerRuntime, args: string[], exec: Exec, timeoutMs 
 
 /**
  * Fails early, with the fix, when the image lacks the manager the project's lockfile needs
- * (a stock python:*-slim image ships pip but not uv or poetry).
+ * (a stock python:*-slim image ships pip but not uv or poetry — pip itself is assumed present
+ * on any python image and is not probed for).
  */
-export async function ensurePythonManagerInImage(settings: PythonContainerSettings, manager: "uv" | "poetry", exec: Exec = runCommand): Promise<void> {
+export async function ensurePythonManagerInImage(settings: PythonContainerSettings, manager: "uv" | "poetry" | "pip", exec: Exec = runCommand): Promise<void> {
+  if (manager === "pip") return;
   const found = await probe(settings.runtime, ["run", "--rm", "--entrypoint", "sh", settings.image, "-c", `command -v ${manager}`], exec);
   if (found.exitCode === 0) return;
   throw new Error(

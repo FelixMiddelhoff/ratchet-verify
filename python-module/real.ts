@@ -14,7 +14,7 @@ import { scanPythonUsage, type PythonUsageScan } from "./usage.js";
 
 export interface RealPythonDepsOptions {
   projectDir: string;
-  lockfileName: "uv.lock" | "poetry.lock";
+  lockfileName: "uv.lock" | "poetry.lock" | "requirements.txt";
   testCommand?: string[];
   testTimeoutMs?: number;
   installTimeoutMs?: number;
@@ -78,14 +78,20 @@ async function runInSandbox(
 }
 
 function installArgs(manager: PythonManager): [string, string[]] {
-  return manager === "uv" ? ["uv", ["sync", "--frozen"]] : ["poetry", ["install", "--no-interaction"]];
+  if (manager === "uv") return ["uv", ["sync", "--frozen"]];
+  if (manager === "poetry") return ["poetry", ["install", "--no-interaction"]];
+  return ["pip", ["install", "--require-hashes", "-r", "requirements.txt"]];
 }
 
 /** Pins one package to an exact version on top of the frozen install, for a single-dependency probe. */
 function pinArgs(manager: PythonManager, name: string, version: string): [string, string[]] {
-  return manager === "uv" ? ["uv", ["pip", "install", `${name}==${version}`]] : ["poetry", ["run", "pip", "install", `${name}==${version}`]];
+  if (manager === "uv") return ["uv", ["pip", "install", `${name}==${version}`]];
+  if (manager === "poetry") return ["poetry", ["run", "pip", "install", `${name}==${version}`]];
+  return ["pip", ["install", `${name}==${version}`]];
 }
 
 function runVia(manager: PythonManager, command: string[]): string[] {
-  return manager === "uv" ? ["uv", "run", ...command] : ["poetry", "run", ...command];
+  if (manager === "uv") return ["uv", "run", ...command];
+  if (manager === "poetry") return ["poetry", "run", ...command];
+  return command;
 }

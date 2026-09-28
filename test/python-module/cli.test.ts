@@ -23,9 +23,17 @@ test("an unreadable lockfile path -> reported error, exit code 2", async () => {
 });
 
 test("--lockfile-name rejects an unknown value", async () => {
-  const { io } = fakeIo();
-  const code = await runPythonCli(["--project", ".", "--old-lockfile", "a", "--new-lockfile", "b", "--lockfile-name", "requirements.txt"], io);
+  const { err, io } = fakeIo();
+  const code = await runPythonCli(["--project", ".", "--old-lockfile", "a", "--new-lockfile", "b", "--lockfile-name", "setup.py"], io);
   assert.equal(code, 2);
+  assert.ok(err[0]!.startsWith("usage:"));
+});
+
+test("--lockfile-name accepts requirements.txt (fails later on an unreadable path, not a parse rejection)", async () => {
+  const { err, io } = fakeIo();
+  const code = await runPythonCli(["--project", ".", "--old-lockfile", "/does/not/exist/requirements.txt", "--new-lockfile", "/does/not/exist/requirements.txt", "--lockfile-name", "requirements.txt"], io);
+  assert.equal(code, 2);
+  assert.ok(err[0]!.startsWith("ratchet:"));
 });
 
 test("--old-lockfile and --base together -> usage error (exactly one allowed)", async () => {

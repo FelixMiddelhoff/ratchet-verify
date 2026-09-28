@@ -10,7 +10,7 @@ node --experimental-strip-types python-module/cli.ts \
   --project /path/to/python/project \
   (--old-lockfile /path/to/old/uv.lock | --base main) \
   [--new-lockfile /path/to/new/uv.lock] \
-  [--lockfile-name uv.lock|poetry.lock] [--container <image>] [--format text|json] [--test pytest -x]
+  [--lockfile-name uv.lock|poetry.lock|requirements.txt] [--container <image>] [--format text|json] [--test pytest -x]
 ```
 
 `--base <ref>` reads the old lockfile from that git ref instead of a plain file path, reusing
@@ -23,8 +23,9 @@ the common case is "does the working tree's bump still work against the base bra
 
 `--container <image>` runs installs and tests inside a docker/podman container instead of a
 temp-dir sandbox (stronger isolation: the container only sees the sandbox mount, nothing else
-of the host). The image must ship `uv` or `poetry` (whichever the lockfile needs) — a stock
-`python:3.x-slim` does not, and the CLI fails early with that message via
+of the host). The image must ship `uv`/`poetry`/`pip` (whichever the lockfile needs; `pip`
+is assumed present on any Python image and is not probed for) — a stock `python:3.x-slim`
+ships pip but not uv or poetry, and the CLI fails early with that message via
 `ensurePythonManagerInImage` rather than failing per-candidate later. Without `--container`,
 temp-dir isolation is used (env allowlist + redirected home, no filesystem confinement).
 
@@ -42,10 +43,9 @@ existing Node CLI and reusing `src/report/` and `src/bisect/` shapes where the c
 
 ## Scope v1 (locked)
 
-- **Lockfiles**: `uv.lock` and `poetry.lock` only. Both are TOML, both pin exact versions and
-  hashes, both are straightforward to diff. `requirements.txt` (+ hashes) is explicitly
-  deferred to v2 — it's a looser, less structured format (no single canonical dependency
-  graph) and would slow down v1 for comparatively little benefit right now.
+- **Lockfiles**: `uv.lock` and `poetry.lock` for v1. `requirements.txt` support landed in v2
+  (see below), scoped to hash-pinned `pip-compile` output only — a loose unpinned
+  `requirements.txt` has no single canonical dependency graph and stays unsupported.
 - **Static usage scan**: shell out to Python's own `ast` module (`python3 -c "import ast; ..."`)
   from a short driver script, instead of adding a JS-side Python parser dependency. Zero new
   npm deps, and the scan runs in the same sandbox that already has a Python interpreter
@@ -95,9 +95,17 @@ existing Node CLI and reusing `src/report/` and `src/bisect/` shapes where the c
   pass). Still open: SARIF output, a config file, a GitHub Action, and a `package.json` `bin`
   entry (needs its own build step — this module currently isn't compiled into `dist` or
   listed in `package.json`'s `files`, so it isn't published to npm at all yet).
+- **`requirements.txt` support (done)**: `lockfile.ts`'s `parsePythonLock` auto-detects the
+  format (TOML `[[package]]` vs. no such marker) and parses hash-pinned pip-compile output
+  (`name==version` plus `--hash=...`/`# via ...` continuation lines; `\`-line-continuations
+  joined before matching). `PythonManager` gained `"pip"`: install is
+  `pip install --require-hashes -r requirements.txt` (refuses any unhashed requirement, the
+  same "frozen, do not silently re-resolve" guarantee `uv sync --frozen`/`poetry install`
+  give); the test command runs directly with no wrapper subcommand (`uv run`/`poetry run`
+  have no pip equivalent). Environment markers (`; python_version < "3.9"`) are stripped, not
+  evaluated — v1/v2 has no per-environment resolution concept.
 
 ## Known v1/v2 gaps (open follow-ups, not started)
 
-- **`requirements.txt` unsupported**: deferred to v2 per the original scope lock.
 - **Single test command assumption**: `installAndTestPython`/`real.ts` default to `pytest`
   with no auto-detection (Python has no `scripts.test` equivalent to read).
