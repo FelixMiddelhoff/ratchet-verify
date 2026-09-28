@@ -1,10 +1,11 @@
 # Tutorial: monorepos and workspaces
 
-This walks through ratchet on an npm-workspaces project, then a shorter pnpm
-pass. Every command and output below was run for real with npm 11 and pnpm
-9.15.9 on Node 24; the sandbox path in output differs on every run. Read
-[tutorial.md](tutorial.md) first if you haven't — this page only covers what
-changes for a monorepo.
+This walks through ratchet on an npm-workspaces project, then shorter pnpm
+and yarn classic passes, then container isolation. Every command and output
+below was run for real — npm 11, pnpm 9.15.9, yarn classic 1.22.22 and
+podman 6.1.2, all on Node 24 — the sandbox path in output differs on every
+run. Read [tutorial.md](tutorial.md) first if you haven't — this page only
+covers what changes for a monorepo.
 
 ## The one limitation to know up front
 
@@ -243,16 +244,111 @@ not that `@mono-demo/core`'s own tests ran. Give the root a real
 `--workspaces --if-present` form for npm) if you want the verdict to mean
 something beyond "the repo didn't crash".
 
-**What wasn't verified for real:** yarn classic/berry workspaces (only the
-npm and pnpm cases above were actually run on this box; yarn workspace
-support is described in the README/configuration.md from the `feat/workspaces`
-implementation and its tests, not re-verified here), and container isolation
-mode (`--isolation container`) against either fixture — both fixtures above
-were only run with the default `temp-dir` isolation. If you rely on yarn
-workspaces or container mode for monorepos, treat those combinations as
-untested by this tutorial specifically, even though the underlying code
-paths are covered by the project's test suite (`test/workspaces.test.ts`)
-and corpus.
+## Yarn classic workspaces
+
+Same shape again: `packages/core` (declares `commander`) and `packages/cli`
+(declares a plain-version dependency on `packages/core`, since yarn classic
+doesn't have pnpm's `workspace:*` protocol). Verified for real with yarn
+classic 1.22.22, installed the same way as pnpm above
+(`npm i yarn@1 --prefix <tmp>`, `.bin` prepended to `PATH` — this project's
+own corpus runner uses the same trick for a box without yarn/pnpm globally
+installed).
+
+`package.json` (root) — same `workspaces` field as the npm case, root test
+script left as a stub for the same reason as the pnpm section:
+
+```json
+{
+  "name": "mono-yarn-demo",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "test": "node -e \"console.log('root: no per-workspace scripts run')\""
+  }
+}
+```
+
+`packages/cli/package.json` depends on `"@mono-yarn/core": "1.0.0"` (a pinned
+version — yarn classic workspaces link same-repo packages by matching
+version ranges against what's on disk, not by a special protocol).
+`yarn install`, commit, then bump with the per-workspace form:
+
+```
+$ yarn workspace @mono-yarn/core add commander@9.0.0 --exact
+```
+
+### Run ratchet
+
+```
+$ ratchet . --base HEAD
+```
+
+Real output:
+
+```
+ratchet: workspace project (2 packages); tests run via the root scripts.test only
+RISKY  commander 8.3.0 -> 9.0.0 (direct)
+  tests pass, but the changelog names 2 symbol uses in your code as breaking
+  workspaces: declared in @mono-yarn/core; used in @mono-yarn/core
+  - packages/core/index.js:5  program.parse(argv);
+    changelog 9.0.0 (high): - *Breaking:* removed internal fallback to `require.main.filename` when script not known from arguments passed to `.parse()`
+  - packages/core/index.js:4  program.option("-d, --debug", "enable debug output");
+    changelog 9.0.0 (medium): - *Breaking:* default value specified for boolean option now always used as default value (see .preset() to match some previous behaviours) (#1652)
+  caveat: major version bump: breaking changes are allowed even if the changelog does not list them
+
+overall: risky
+isolation: temp-dir: credentials are withheld, but install scripts can still read host files (use --isolation container)
+```
+
+Same `declaredIn`/`used in` attribution as npm and pnpm. Bisection would use
+`yarn workspace @mono-yarn/core add commander@ver --ignore-scripts` here,
+since `@mono-yarn/core` is the sole declaring workspace.
+
+**Yarn berry was not covered here.** Setting up a real berry-workspaces
+fixture (`.yarnrc.yml`, `nodeLinker`, a committed `.yarn/releases`) on top of
+the three package managers above was more setup than this pass justified;
+berry workspace support is exercised by the project's own test suite
+(`test/workspaces.test.ts`) and by the corpus, just not re-demonstrated with
+fresh real output in this tutorial. Treat berry specifically as
+documented-but-not-re-verified-here if you rely on it.
+
+## Stronger isolation: `--isolation container`
+
+Everything above used the default `temp-dir` isolation. Workspaces work the
+same way under `--isolation container` — verified for real on podman 6.1.2
+against the npm-workspaces fixture from the first section:
+
+```
+$ ratchet . --base HEAD --isolation container
+```
+
+Real output:
+
+```
+ratchet: workspace project (2 packages); tests run via the root scripts.test only
+RISKY  commander 8.3.0 -> 9.0.0 (direct)
+  tests pass, but the changelog names 2 symbol uses in your code as breaking
+  workspaces: declared in @mono-demo/core; used in @mono-demo/core
+  - packages/core/index.js:5  program.parse(argv);
+    changelog 9.0.0 (high): - *Breaking:* removed internal fallback to `require.main.filename` when script not known from arguments passed to `.parse()`
+  - packages/core/index.js:4  program.option("-d, --debug", "enable debug output");
+    changelog 9.0.0 (medium): - *Breaking:* default value specified for boolean option now always used as default value (see .preset() to match some previous behaviours) (#1652)
+  caveat: major version bump: breaking changes are allowed even if the changelog does not list them
+
+overall: risky
+isolation: container (podman, node:24): installs and tests could only see the sandbox directory
+```
+
+Only the final `isolation:` line changes — everything about workspace
+discovery, attribution and the root-only test-script limitation is
+identical under container isolation. For a pnpm or yarn workspace project,
+remember the default `node:24` image doesn't ship pnpm (and only ships yarn
+classic, not berry): point `containerImage` at an image that has what you
+need, per
+[configuration.md#images-for-pnpm-and-yarn](configuration.md#images-for-pnpm-and-yarn).
+That combination (pnpm/berry workspaces *and* container isolation, together)
+wasn't re-run for this tutorial; the npm-workspaces case above is what was
+verified.
 
 ## Where next
 
