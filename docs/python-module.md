@@ -7,8 +7,9 @@ fail — bisect down to the exact version that broke them.
 
 It lives in `python-module/` in this same repository, as a separate module rather than
 bolted onto the npm core (Python's tooling, lockfile formats and package index are different
-enough to warrant that). It is not yet published to npm as its own package — see
-[Installing it](#installing-it) below for what that means in practice today.
+enough to warrant that). It isn't a separate npm package — it ships as part of the same
+`ratchet-verify` package (from v0.9.0 onward), adding a second `ratchet-python` bin alongside
+`ratchet`/`ratchet-verify`. See [Installing it](#installing-it) below.
 
 This page is the user-facing "what is it, how do I run it" guide. For build/scope/decision
 history, see issue [#15](https://github.com/FelixMiddelhoff/ratchet-verify/issues/15) and
@@ -48,30 +49,33 @@ The result is one of three verdicts, same meaning as the npm core's:
 
 ## Installing it
 
-This module is checked into the `ratchet-verify` repository but is **not yet published to npm
-as its own package**. Two ways to run it today:
-
-**Directly from a checkout, no build needed:**
+**From npm (v0.9.0+), no clone needed:**
 
 ```bash
-git clone https://github.com/FelixMiddelhoff/ratchet-verify.git
-node --experimental-strip-types ratchet-verify/python-module/cli.ts --help
+npx --package ratchet-verify@latest ratchet-python --project . --base main
 ```
 
-(`--experimental-strip-types` is a real Node 24 flag — it type-strips TypeScript at runtime
-without a build step. There's no `--help` output beyond the usage line; see
-[CLI reference](#cli-reference) below.)
-
-**Built, as a local bin:**
+Or install it once and get the `ratchet-python` command directly:
 
 ```bash
-git clone https://github.com/FelixMiddelhoff/ratchet-verify.git
-cd ratchet-verify
-npm ci
-npm run build          # compiles both the npm core (dist/) and this module (dist-python/)
-npm link                # or: node dist-python/python-module/cli.js ...
+npm install -g ratchet-verify
 ratchet-python --project /path/to/your/python/project --base main
 ```
+
+(There's a separate `ratchet-verify`/`ratchet` bin for the npm core in the same package —
+`ratchet-python` is the one this module adds.)
+
+**From a checkout** (for working on this module itself, or to run an unreleased commit):
+
+```bash
+git clone https://github.com/FelixMiddelhoff/ratchet-verify.git
+node --experimental-strip-types ratchet-verify/python-module/cli.ts --project . --base main
+```
+
+`--experimental-strip-types` is a real Node 24 flag — it type-strips TypeScript at runtime
+without a build step. Or build it first: `npm ci && npm run build` (compiles both the npm
+core's `dist/` and this module's `dist-python/`), then `node dist-python/python-module/cli.js`
+or `npm link` for a local `ratchet-python` command.
 
 ## Quick example
 
@@ -194,14 +198,13 @@ policy as the npm core's `.ratchetrc`). CLI flags always override the config fil
     format: json
 ```
 
-Since this module isn't published to npm yet, the action checks out `ratchet-verify` itself at
-a pinned ref (`ratchet-ref` input, default `main` — pin it to a commit SHA for anything you
-don't want to silently pick up upstream changes) and builds it there, rather than the usual
-`npx package@version`. Inputs: `base`, `project-dir`, `lockfile-name`, `container-image`,
-`format`, `ratchet-ref`, `node-version`. Outputs: `verdict` (only populated when
-`format: json`) and `report-file`. With `format: sarif`, results are uploaded to GitHub code
-scanning automatically. There's no PR-comment posting yet (the npm core's action has one; this
-is a known gap, not a design decision).
+The action runs `npx --package ratchet-verify@<version> ratchet-python` under the hood, same
+idea as the npm core's own action (`.github/actions/ratchet/`), just with the `ratchet-python`
+bin instead. Inputs: `base`, `project-dir`, `lockfile-name`, `container-image`, `format`,
+`ratchet-version` (npm version or tag, default `latest`), `node-version`. Outputs: `verdict`
+(only populated when `format: json`) and `report-file`. With `format: sarif`, results are
+uploaded to GitHub code scanning automatically. There's no PR-comment posting yet (the npm
+core's action has one; this is a known gap, not a design decision).
 
 ## Output format (`--format json`)
 
@@ -248,7 +251,7 @@ is a known gap, not a design decision).
   as strong a single convention for it, and it wasn't in scope for v1/v2).
 - **Single test command guess**: falls back to `pytest` if nothing more specific is detected
   (see [Test command](#test-command)) — pass `--test` explicitly if that's wrong for your project.
-- **Not published to npm** as its own package yet — see [Installing it](#installing-it).
+- **No PR-comment posting** from the GitHub Action yet (the npm core's action has one).
 - **Environment markers** in `requirements.txt` (`; python_version < "3.9"`) are stripped, not
   evaluated — there's no per-environment resolution concept in this module.
 
