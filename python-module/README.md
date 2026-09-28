@@ -54,17 +54,23 @@ existing Node CLI and reusing `src/report/` and `src/bisect/` shapes where the c
 1. **Done** — design lock (comment on #15, this file). PR #62.
 2. **Done** — lockfile diff: `uv.lock` + `poetry.lock` parsing and diffing (`lockfile.ts`). PR #63.
 3. **Done** — changelog fetch: PyPI JSON API + GitHub `project_urls` follow-through (`changelog.ts`, `version.ts`). PR #64.
-4. **Done** — static usage scan: `ast`-based inline driver, subprocess bridge from TypeScript (`usage.ts`). Not yet wired into the pipeline (no breaking-change matcher in v1 — see below). PR #65.
+4. **Done** — static usage scan: `ast`-based inline driver, subprocess bridge from TypeScript (`usage.ts`). PR #65.
 5. **Done** — sandboxed install + test run (`sandbox.ts`, `testrun.ts`). **v1 is temp-dir isolation only**, not container mode: the npm core shipped temp-dir first too, before container mode (#1) followed later as its own PR. Container mode for Python is an open follow-up, not v1. PR #66.
 6. **Done** — bisection: PEP 440 version-by-version bisect loop (`bisect.ts`), duplicated from `src/bisect/` rather than imported because the core hard-codes semver comparison. PR #67.
 7. **Done** — report/CLI wiring (`report.ts`, `pipeline.ts`, `real.ts`, `render.ts`, `cli.ts`) + this docs update.
 
-## Known v1 gaps (open follow-ups, not started)
+## v2 progress
 
-- **No breaking-change matcher**: `usage.ts` (phase 4) is not wired into the pipeline. The
-  verdict is tests + bisection only — no call-site-vs-changelog cross-reference like the npm
-  core's `src/match/`. Adding it means porting `matchBreakingChanges` at the same reduced
-  scope (no workspaces) once real-world usage on this module shows it's worth it.
+- **Breaking-change matcher (done)**: `match.ts` cross-references changelog text against
+  `usage.ts` import sites, wired into `pipeline.ts`. Reuses `classifyLines` from
+  `src/match/classify.ts` directly (pure text classification, no npm-specific types); the
+  symbol-matching rules are ported from `src/match/index.ts` at reduced scope — `from-import`
+  sites match by symbol name the same way JS named imports do, `import pkg` sites (no member
+  info tracked) get the same low-confidence "whole module used" treatment as JS's
+  `import * as x`. No subpath/default-export masking (JS-specific quirks that don't apply).
+
+## Known v1/v2 gaps (open follow-ups, not started)
+
 - **No container mode**: sandboxing is temp-dir only (env allowlist + redirected home), not
   the stronger per-run container isolation the npm core added later.
 - **CLI is minimal**: explicit lockfile file paths, not `--base` git-ref reading; text output

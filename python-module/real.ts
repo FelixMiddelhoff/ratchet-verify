@@ -1,12 +1,15 @@
 /**
- * Phase 7 of #15: real (non-faked) PythonPipelineDeps, wiring the sandbox (phase 5) and
- * changelog fetch (phase 3) into the pipeline (this phase). Mirrors src/pipeline/real.ts's
- * role at reduced scope (no workspace pinning).
+ * Phase 7 of #15 + v2 item 1: real (non-faked) PythonPipelineDeps, wiring the sandbox
+ * (phase 5), changelog fetch (phase 3) and usage scan (phase 4) into the pipeline. Mirrors
+ * src/pipeline/real.ts's role at reduced scope (no workspace pinning).
  */
+import { readdir, readFile } from "node:fs/promises";
+import { join, relative } from "node:path";
 import { fetchPythonChangelog, type PythonChangelogRequest, type PythonChangelogResult } from "./changelog.js";
 import type { PythonPipelineDeps } from "./pipeline.js";
 import { withPythonSandbox } from "./sandbox.js";
 import { detectPythonManager, installAndTestPython, type PythonManager, type PythonTestOutcome } from "./testrun.js";
+import { scanPythonUsage, type PythonUsageScan } from "./usage.js";
 
 export interface RealPythonDepsOptions {
   projectDir: string;
@@ -15,7 +18,10 @@ export interface RealPythonDepsOptions {
   testTimeoutMs?: number;
   installTimeoutMs?: number;
   githubToken?: string;
+  pythonPath?: string;
 }
+
+const NOT_SCANNED = new Set([".git", ".venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", "node_modules"]);
 
 export function realPythonDeps(options: RealPythonDepsOptions): PythonPipelineDeps {
   return {
@@ -34,7 +40,27 @@ export function realPythonDeps(options: RealPythonDepsOptions): PythonPipelineDe
         return { status: result.exitCode === 0 ? "passed" : "failed", result };
       }),
     fetchChangelog: (request: PythonChangelogRequest): Promise<PythonChangelogResult> => fetchPythonChangelog({ ...request, githubToken: options.githubToken }),
+    scanUsage: async (packageName: string): Promise<PythonUsageScan> => {
+      const files = await readPythonFiles(options.projectDir);
+      return scanPythonUsage(packageName, files, { pythonPath: options.pythonPath });
+    },
   };
+}
+
+async function readPythonFiles(root: string): Promise<{ path: string; text: string }[]> {
+  const files: { path: string; text: string }[] = [];
+  const walk = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!NOT_SCANNED.has(entry.name)) await walk(full);
+      } else if (entry.name.endsWith(".py")) {
+        files.push({ path: relative(root, full).replaceAll("\\", "/"), text: await readFile(full, "utf8") });
+      }
+    }
+  };
+  await walk(root);
+  return files;
 }
 
 async function runInSandbox(
