@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { PythonSandbox } from "../../python-module/sandbox.js";
-import { detectPythonManager, installAndTestPython } from "../../python-module/testrun.js";
+import { detectPythonManager, detectPythonTestCommand, installAndTestPython } from "../../python-module/testrun.js";
 import { withTempProject } from "../helpers.js";
 import type { RunResult } from "../../src/sandbox/exec.js";
 
@@ -84,5 +84,24 @@ test("testCommand option overrides the v1 default of pytest", async () => {
     const sandbox = fakeSandbox(dir, { "uv sync --frozen": ok(), "uv run python -m unittest": ok() });
     const outcome = await installAndTestPython(sandbox, { testCommand: ["python", "-m", "unittest"] });
     assert.equal(outcome.status, "passed");
+  });
+});
+
+test("detectPythonTestCommand: pytest.ini, pyproject.toml/setup.cfg/tox.ini sections, manage.py, and no signal", async () => {
+  await withTempProject({ "pytest.ini": "" }, async (dir) => assert.deepEqual(detectPythonTestCommand(dir), ["pytest"]));
+  await withTempProject({ "pyproject.toml": "[tool.pytest.ini_options]\naddopts = '-x'\n" }, async (dir) => assert.deepEqual(detectPythonTestCommand(dir), ["pytest"]));
+  await withTempProject({ "setup.cfg": "[tool:pytest]\ntestpaths = tests\n" }, async (dir) => assert.deepEqual(detectPythonTestCommand(dir), ["pytest"]));
+  await withTempProject({ "tox.ini": "[pytest]\ntestpaths = tests\n" }, async (dir) => assert.deepEqual(detectPythonTestCommand(dir), ["pytest"]));
+  await withTempProject({ "manage.py": "" }, async (dir) => assert.deepEqual(detectPythonTestCommand(dir), ["python", "manage.py", "test"]));
+  await withTempProject({ "pyproject.toml": "[project]\nname = 'x'\n" }, async (dir) => assert.equal(detectPythonTestCommand(dir), undefined));
+  await withTempProject({}, async (dir) => assert.equal(detectPythonTestCommand(dir), undefined));
+});
+
+test("detected test command (manage.py) is used automatically when testCommand is not given", async () => {
+  await withTempProject({ "uv.lock": "", "manage.py": "" }, async (dir) => {
+    const sandbox = fakeSandbox(dir, { "uv sync --frozen": ok(), "uv run python manage.py test": ok("OK") });
+    const outcome = await installAndTestPython(sandbox);
+    assert.equal(outcome.status, "passed");
+    assert.deepEqual(sandbox.calls[1], ["uv", "run", "python", "manage.py", "test"]);
   });
 });

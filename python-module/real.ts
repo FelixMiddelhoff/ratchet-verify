@@ -9,7 +9,7 @@ import { fetchPythonChangelog, type PythonChangelogRequest, type PythonChangelog
 import type { PythonPipelineDeps } from "./pipeline.js";
 import type { PythonContainerSettings } from "./container.js";
 import { withPythonSandbox, type PythonSandbox } from "./sandbox.js";
-import { detectPythonManager, installAndTestPython, type PythonManager, type PythonTestOutcome } from "./testrun.js";
+import { detectPythonManager, detectPythonTestCommand, installAndTestPython, type PythonManager, type PythonTestOutcome } from "./testrun.js";
 import { scanPythonUsage, type PythonUsageScan } from "./usage.js";
 
 export interface RealPythonDepsOptions {
@@ -37,7 +37,7 @@ export function realPythonDeps(options: RealPythonDepsOptions): PythonPipelineDe
         if (install.exitCode !== 0) return { status: "install-failed", result: install };
         const pin = await sandbox.run(...pinArgs(manager, name, version), options.installTimeoutMs ?? 600_000);
         if (pin.exitCode !== 0) return { status: "install-failed", result: pin };
-        const [cmd, ...args] = runVia(manager, options.testCommand ?? ["pytest"]);
+        const [cmd, ...args] = runVia(manager, options.testCommand ?? detectPythonTestCommand(sandbox.dir) ?? ["pytest"]);
         const result = await sandbox.run(cmd!, args, options.testTimeoutMs ?? 600_000);
         if (result.timedOut) return { status: "timed-out", result };
         return { status: result.exitCode === 0 ? "passed" : "failed", result };
