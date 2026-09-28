@@ -16,8 +16,12 @@ export interface Config {
   containerRuntime: "auto" | "docker" | "podman";
   /** Image for container isolation; defaults to node:24. */
   containerImage?: string;
-  /** Container mode: "tests-offline" (default) runs the test phase with no network; "open" keeps it. */
-  containerNetwork: "tests-offline" | "open";
+  /**
+   * Container mode: "tests-offline" (default) runs the test phase with no network, install phase open; "open" keeps
+   * the network everywhere; "proxy" runs the install phase through the registry proxy with egress restricted to the
+   * npm registry (no custom registry, no credentials, unless `registryAuth` is also on), test phase stays offline.
+   */
+  containerNetwork: "tests-offline" | "open" | "proxy";
   /** Opt-in: install through a registry proxy that holds the credentials from `.npmrc`, so private registries work. Needs container isolation. */
   registryAuth: boolean;
   /** With registryAuth: only package names already in the base lockfile/manifest plus the ones under test pass the proxy. Turning it off is reported. */
@@ -90,8 +94,8 @@ export function parseConfig(text: string): Config {
   if (!["auto", "docker", "podman"].includes(config.containerRuntime)) {
     throw new Error(`${CONFIG_FILE}: "containerRuntime" must be "auto", "docker" or "podman"`);
   }
-  if (!["tests-offline", "open"].includes(config.containerNetwork)) {
-    throw new Error(`${CONFIG_FILE}: "containerNetwork" must be "tests-offline" or "open"`);
+  if (!["tests-offline", "open", "proxy"].includes(config.containerNetwork)) {
+    throw new Error(`${CONFIG_FILE}: "containerNetwork" must be "tests-offline", "open" or "proxy"`);
   }
   if (typeof config.registryAuth !== "boolean") throw new Error(`${CONFIG_FILE}: "registryAuth" must be true or false`);
   if (typeof config.registryAllowlist !== "boolean") throw new Error(`${CONFIG_FILE}: "registryAllowlist" must be true or false`);

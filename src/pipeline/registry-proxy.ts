@@ -71,17 +71,25 @@ const readIfExists = async (path: string): Promise<string | undefined> => {
  */
 export async function withRegistryProxy<T>(options: RegistryProxyOptions, fn: (run: RegistryProxyRun | undefined) => Promise<T>): Promise<T> {
   const { config, isolation } = options;
-  if (!config.registryAuth) return fn(undefined);
+  const networkOnly = config.containerNetwork === "proxy";
+  if (!config.registryAuth && !networkOnly) return fn(undefined);
   if (!isolation.container) {
-    throw new Error('registryAuth needs container isolation (docker or podman): a temp-dir sandbox cannot be confined to the registry proxy, and ratchet never runs unprotected instead. Use --isolation container.');
+    const flag = config.registryAuth ? "registryAuth" : '"--network proxy"';
+    throw new Error(`${flag} needs container isolation (docker or podman): a temp-dir sandbox cannot be confined to the registry proxy, and ratchet never runs unprotected instead. Use --isolation container.`);
   }
-  const userRc = options.env.NPM_CONFIG_USERCONFIG ?? join(options.homeDir ?? homedir(), ".npmrc");
-  const projectRc = options.projectNpmrc ? options.projectNpmrc.text : await readIfExists(join(options.projectDir, ".npmrc"));
-  const yarnRc = options.projectYarnrc ? options.projectYarnrc.text : await readIfExists(join(options.projectDir, ".yarnrc.yml"));
-  const layers = [yarnRc === undefined ? undefined : yarnrcToNpmrc(yarnRc), projectRc, await readIfExists(userRc)].filter((t): t is string => t !== undefined);
+  // "--network proxy" alone (no registryAuth): pure network restriction, not registry redirection. Never reads
+  // .npmrc/.yarnrc.yml or credentials; the sandbox only ever reaches the public npm registry through the proxy.
+  let layers: string[] = [];
+  if (config.registryAuth) {
+    const userRc = options.env.NPM_CONFIG_USERCONFIG ?? join(options.homeDir ?? homedir(), ".npmrc");
+    const projectRc = options.projectNpmrc ? options.projectNpmrc.text : await readIfExists(join(options.projectDir, ".npmrc"));
+    const yarnRc = options.projectYarnrc ? options.projectYarnrc.text : await readIfExists(join(options.projectDir, ".yarnrc.yml"));
+    layers = [yarnRc === undefined ? undefined : yarnrcToNpmrc(yarnRc), projectRc, await readIfExists(userRc)].filter((t): t is string => t !== undefined);
+  }
   const home = options.homeDir ?? homedir();
   const files = { home, read: (path: string): string | undefined => { try { return readFileSync(path, "utf8"); } catch { return undefined; } } };
-  const sourced = sourceRegistries(layers, options.env, config.registryPrivateHosts, files);
+  const sourced = sourceRegistries(layers, options.env, config.registryAuth ? config.registryPrivateHosts : [], files);
+  if (networkOnly && !config.registryAuth) options.log?.("registry proxy: network-only mode (--network proxy): egress restricted to the npm registry, no custom registry or credentials read");
   const allowlistOn = config.registryAllowlist;
   const names = allowedPackageNames(options.baseLockfileText, options.baseManifestNames, options.candidateNames);
   const built = buildProxyConfig({

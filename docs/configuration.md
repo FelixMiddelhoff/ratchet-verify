@@ -23,7 +23,7 @@ an error, so a typo can't silently weaken a check.
 | `failOn` | `"broken"` | `"broken"` or `"risky"`: the overall verdict that makes the exit code 1. `--fail-on` overrides it. |
 | `isolation` | `"temp-dir"` | `"temp-dir"`, `"container"` or `"auto"`. See below. `--isolation` overrides it. |
 | `containerRuntime` | `"auto"` | `"auto"` (docker, then podman), `"docker"` or `"podman"`. |
-| `containerNetwork` | `"tests-offline"` | Container mode only. `"tests-offline"`: the test phase runs with `--network none`. `"open"`: tests keep the network. `--network` overrides it. |
+| `containerNetwork` | `"tests-offline"` | Container mode only. `"tests-offline"`: the test phase runs with `--network none`, install phase open. `"open"`: tests keep the network too. `"proxy"`: install phase is confined to the registry proxy with egress restricted to the npm registry (no custom registry, no credentials read, unless `registryAuth` is also on); test phase stays offline, same as `"tests-offline"`. `--network` overrides it. |
 | `registryAuth` | `false` | Private registries through a credential-holding proxy (container isolation only). `--registry-auth` turns it on. See [private-registries.md](private-registries.md); with `--base` these `registry*` options are read from the base ref, not from the checkout under test. |
 | `registryAllowlist` | `true` | With `registryAuth`: only package names already in the base lockfile/manifest plus the ones ratchet is testing pass the proxy. `false` (or `--no-registry-allowlist`) is reported. Not a boundary against the pull request itself — see [private registries](private-registries.md). |
 | `registryDiscovery` | `false` | With `registryAuth` and `registryAllowlist`: also let a transitive dependency an allowed packument declares pass the proxy (reported). Off by default: such a name is denied instead of merely audited. |
@@ -42,7 +42,7 @@ against it. Two levels:
 | Level | What it does | What it does not stop |
 |---|---|---|
 | `temp-dir` | A temporary copy of the project, an allowlisted environment (no `GITHUB_TOKEN`, `NPM_TOKEN`, cloud credentials) and a redirected home directory | A script reading absolute host paths (`~/.ssh`, `~/.aws`) or reaching any network host |
-| `container` | Everything above, run in a docker or podman container whose only mount is the sandbox directory; all capabilities dropped, `no-new-privileges`, a process limit; the container's environment is built from scratch | The install phase keeps full network access: installs need the registry, and docker/podman have no per-host allowlist, so an install script can still send out anything it can read (only the sandbox). The test phase runs in a second container with `--network none` (default). |
+| `container` | Everything above, run in a docker or podman container whose only mount is the sandbox directory; all capabilities dropped, `no-new-privileges`, a process limit; the container's environment is built from scratch | By default the install phase keeps full network access: installs need the registry, and docker/podman have no per-host allowlist, so an install script can still send out anything it can read (only the sandbox). `--network proxy` (or `registryAuth`) confines the install phase to the registry proxy instead — see below and [private registries](private-registries.md). The test phase runs in a second container with `--network none` (default). |
 
 `auto` uses a container when an engine is available and falls back to
 `temp-dir` with a warning on stderr. (`registryAuth` never falls back: without a
@@ -57,7 +57,10 @@ Notes for container mode:
   Bisection and single-dependency probes (`--package-lock-only`, `yarn add`, `pnpm add --lockfile-only`) need the
   network and keep it. Install scripts are not run offline: many legitimately
   download binaries (esbuild, sharp), so `--ignore-scripts` plus an offline
-  `npm rebuild` would break real projects; an allowlisting proxy is future work.
+  `npm rebuild` would break real projects. `--network proxy` restricts the install
+  phase's egress to the npm registry (plus anything named in `registryAllowHosts`
+  / `registryConnectHosts`) instead of leaving it fully open; see
+  [private registries](private-registries.md#network-only-mode-network-proxy).
 - A suite that needs the network (integration tests, a local service) fails
   offline; set `"containerNetwork": "open"`. Tests that fail only because of
   the missing network are reported as failures like any other.

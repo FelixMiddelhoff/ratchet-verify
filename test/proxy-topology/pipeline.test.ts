@@ -87,6 +87,37 @@ describe("withRegistryProxy", () => {
     });
   });
 
+  test("--network proxy (no registryAuth): triggers the proxy, ignores .npmrc entirely, defaults to the public npm registry only", async () => {
+    await inProject(`registry=https://npm.corp.example/api/npm/repo/\n//npm.corp.example/api/npm/repo/:_authToken=\${CORP_TOKEN}\n`, async (dir, home) => {
+      const e = new FakeEngine("docker");
+      const logs: string[] = [];
+      const result = await withRegistryProxy({ ...base(dir, home, { containerNetwork: "proxy" }, container, { CORP_TOKEN: TOKEN }), engine: e, log: (l) => logs.push(l) }, async (run) => {
+        assert.ok(run, "the proxy runs even without registryAuth");
+        assert.deepEqual(run.proxy.registries, [{ id: "main", isDefault: true }]);
+        assert.deepEqual(run.proxy.lockUrlMappings.map((m) => m.from), ["https://registry.npmjs.org/", "https://registry.yarnpkg.com/"]);
+        return run.info();
+      });
+      assert.deepEqual(result.registries, [{ id: "main", host: "registry.npmjs.org", credential: "none" }]);
+      assert.ok(logs.some((l) => /network-only mode/.test(l)));
+      assert.ok(!logs.join("\n").includes("corp.example"), "the private-registry .npmrc line was never read");
+      assert.ok(!JSON.stringify(logs).includes(TOKEN));
+    });
+  });
+
+  test("--network proxy with temp-dir isolation is also an error, never a fallback", async () => {
+    await inProject(undefined, async (dir, home) => {
+      await assert.rejects(withRegistryProxy(base(dir, home, { containerNetwork: "proxy" }, tempDir), async () => 1), /needs container isolation/);
+    });
+  });
+
+  test("--network proxy combined with registryAuth: .npmrc IS read, same as plain registryAuth", async () => {
+    await inProject(`registry=https://npm.corp.example/api/npm/repo/\n//npm.corp.example/api/npm/repo/:_authToken=\${CORP_TOKEN}\n`, async (dir, home) => {
+      const e = new FakeEngine("docker");
+      const result = await withRegistryProxy({ ...base(dir, home, { containerNetwork: "proxy", registryAuth: true }, container, { CORP_TOKEN: TOKEN }), engine: e }, async (run) => run!.info());
+      assert.deepEqual(result.registries, [{ id: "main", host: "npm.corp.example", credential: "bearer" }]);
+    });
+  });
+
   test("an unset ${VAR} in .npmrc fails before anything is started", async () => {
     await inProject(`registry=https://a.example/\n//a.example/:_authToken=\${MISSING_TOKEN}\n`, async (dir, home) => {
       const e = new FakeEngine("docker");

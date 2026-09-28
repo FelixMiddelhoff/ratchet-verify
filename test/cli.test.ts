@@ -64,6 +64,16 @@ test("registry proxy options: off by default, strictly validated, flags", () => 
   assert.throws(() => parseCliArgs(["--base", "x", "--no-registry-allowlist"]), /registry-auth/);
 });
 
+test("--network proxy: parsed, validated, config default and override", () => {
+  assert.equal(parseCliArgs(["--base", "x", "--network", "proxy"]).network, "proxy");
+  assert.equal(parseCliArgs(["--base", "x", "--network", "open"]).network, "open");
+  assert.equal(parseCliArgs(["--base", "x", "--network", "tests-offline"]).network, "tests-offline");
+  assert.throws(() => parseCliArgs(["--base", "x", "--network", "none"]), /--network/);
+  assert.equal(parseConfig("{}").containerNetwork, "tests-offline");
+  assert.equal(parseConfig('{"containerNetwork":"proxy"}').containerNetwork, "proxy");
+  assert.throws(() => parseConfig('{"containerNetwork":"none"}'), /containerNetwork/);
+});
+
 test("--help prints usage and exits 0", async () => {
   const { io, out } = capture();
   assert.equal(await runCli(["--help"], io), 0);

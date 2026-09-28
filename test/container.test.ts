@@ -77,9 +77,21 @@ test("installAndTest: install asks for the network, the test run asks to be offl
 test("config and CLI accept containerNetwork / --network and reject bad values", () => {
   assert.equal(parseConfig("{}").containerNetwork, "tests-offline");
   assert.equal(parseConfig('{"containerNetwork":"open"}').containerNetwork, "open");
-  assert.throws(() => parseConfig('{"containerNetwork":"proxy"}'), /containerNetwork/);
+  assert.equal(parseConfig('{"containerNetwork":"proxy"}').containerNetwork, "proxy");
+  assert.throws(() => parseConfig('{"containerNetwork":"none"}'), /containerNetwork/);
   assert.equal(parseCliArgs(["--network", "open", "--base", "x"]).network, "open");
+  assert.equal(parseCliArgs(["--network", "proxy", "--base", "x"]).network, "proxy");
   assert.throws(() => parseCliArgs(["--network", "none"]), /--network/);
+});
+
+test("runInContainer: containerNetwork proxy also makes the offline phase offline (same as tests-offline)", async () => {
+  const netFlag = async (settings: ContainerSettings, phase?: { offline?: boolean }) => {
+    const engine = fakeEngine(() => ok());
+    await runInContainer(settings, "/r", "npm", ["x"], 1000, engine.exec, phase);
+    return engine.calls[0]!.args.includes("none");
+  };
+  assert.equal(await netFlag({ ...docker, network: "proxy" }, { offline: true }), true);
+  assert.equal(await netFlag({ ...docker, network: "proxy" }), false, "a phase that never asked to be offline stays open");
 });
 
 test("run args: environment is built from scratch and points only inside the mount", () => {
