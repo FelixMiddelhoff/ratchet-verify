@@ -19,9 +19,10 @@ function fakeSandbox(dir: string, results: Record<string, RunResult>): PythonSan
   return { dir, isolation: "temp-dir", run, calls };
 }
 
-test("detects uv vs poetry from lockfile presence, and neither", async () => {
+test("detects uv vs poetry vs pip from lockfile presence, and neither", async () => {
   await withTempProject({ "uv.lock": "" }, async (dir) => assert.equal(detectPythonManager(dir), "uv"));
   await withTempProject({ "poetry.lock": "" }, async (dir) => assert.equal(detectPythonManager(dir), "poetry"));
+  await withTempProject({ "requirements.txt": "" }, async (dir) => assert.equal(detectPythonManager(dir), "pip"));
   await withTempProject({ "pyproject.toml": "" }, async (dir) => assert.equal(detectPythonManager(dir), undefined));
 });
 
@@ -49,6 +50,15 @@ test("poetry: install then `poetry run pytest`, failing with output kept", async
     const outcome = await installAndTestPython(sandbox);
     assert.equal(outcome.status, "failed");
     assert.ok("result" in outcome && outcome.result.output === "1 failed");
+  });
+});
+
+test("pip: --require-hashes install then plain pytest (no run wrapper), passing", async () => {
+  await withTempProject({ "requirements.txt": "" }, async (dir) => {
+    const sandbox = fakeSandbox(dir, { "pip install --require-hashes -r requirements.txt": ok(), pytest: ok("3 passed") });
+    const outcome = await installAndTestPython(sandbox);
+    assert.equal(outcome.status, "passed");
+    assert.deepEqual(sandbox.calls, [["pip", "install", "--require-hashes", "-r", "requirements.txt"], ["pytest"]]);
   });
 });
 

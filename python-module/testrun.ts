@@ -10,7 +10,7 @@ import { join } from "node:path";
 import type { PythonSandbox } from "./sandbox.js";
 import type { RunResult } from "../src/sandbox/exec.js";
 
-export type PythonManager = "uv" | "poetry";
+export type PythonManager = "uv" | "poetry" | "pip";
 
 const TEST_TIMEOUT_MS = 10 * 60 * 1000;
 const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -19,6 +19,7 @@ const DEFAULT_TEST_COMMAND = ["pytest"];
 export function detectPythonManager(dir: string): PythonManager | undefined {
   if (existsSync(join(dir, "uv.lock"))) return "uv";
   if (existsSync(join(dir, "poetry.lock"))) return "poetry";
+  if (existsSync(join(dir, "requirements.txt"))) return "pip";
   return undefined;
 }
 
@@ -53,11 +54,17 @@ export async function installAndTestPython(sandbox: PythonSandbox, options: Pyth
 }
 
 function installCommand(manager: PythonManager): [string, string[]] {
-  // uv sync --frozen / poetry install refuse to proceed when the lockfile is out of sync with pyproject.toml,
-  // the same "frozen, do not silently re-resolve" guarantee npm ci gives the core pipeline.
-  return manager === "uv" ? ["uv", ["sync", "--frozen"]] : ["poetry", ["install", "--no-interaction"]];
+  // uv sync --frozen / poetry install refuse to proceed when the lockfile is out of sync with pyproject.toml;
+  // pip --require-hashes refuses any requirement without a hash. Same "frozen, do not silently
+  // re-resolve" guarantee npm ci gives the core pipeline, three different flags for it.
+  if (manager === "uv") return ["uv", ["sync", "--frozen"]];
+  if (manager === "poetry") return ["poetry", ["install", "--no-interaction"]];
+  return ["pip", ["install", "--require-hashes", "-r", "requirements.txt"]];
 }
 
 function runVia(manager: PythonManager, command: string[]): string[] {
-  return manager === "uv" ? ["uv", "run", ...command] : ["poetry", "run", ...command];
+  // pip installs into whatever `python`/`pytest` etc. already resolve on PATH; no wrapper subcommand exists.
+  if (manager === "uv") return ["uv", "run", ...command];
+  if (manager === "poetry") return ["poetry", "run", ...command];
+  return command;
 }
