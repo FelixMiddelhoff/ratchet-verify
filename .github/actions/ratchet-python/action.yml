@@ -1,0 +1,99 @@
+name: ratchet-verify-python
+description: Verify a Python dependency bump (uv.lock, poetry.lock, or a hash-pinned requirements.txt) before you merge it.
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  base:
+    description: Git ref whose lockfile is the "before" state. Defaults to the pull request's base commit.
+    default: ${{ github.event.pull_request.base.sha }}
+  project-dir:
+    description: Directory (relative to the workspace) containing the Python project and its lockfile.
+    default: "."
+  lockfile-name:
+    description: 'uv.lock, poetry.lock or requirements.txt. Guessed from the new-lockfile path when omitted.'
+    default: ""
+  container-image:
+    description: Run installs and tests in this docker/podman image instead of temp-dir isolation. Must ship uv/poetry (pip is assumed present).
+    default: ""
+  format:
+    description: 'Report format: text (default), json or sarif.'
+    default: text
+  ratchet-ref:
+    description: git ref of FelixMiddelhoff/ratchet-verify to check out and run (this module is not yet published to npm — see python-module/README.md).
+    default: main
+  node-version:
+    description: Node.js version used to build and run ratchet-python.
+    default: "24"
+
+outputs:
+  verdict:
+    description: Overall verdict - safe, risky or broken.
+    value: ${{ steps.run.outputs.verdict }}
+  report-file:
+    description: Path to the rendered report (text, json or sarif, matching the `format` input).
+    value: ${{ steps.run.outputs.report-file }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v5
+      with:
+        repository: FelixMiddelhoff/ratchet-verify
+        ref: ${{ inputs.ratchet-ref }}
+        path: .ratchet-python-tool
+
+    - uses: actions/setup-node@v7
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - shell: bash
+      working-directory: .ratchet-python-tool
+      run: |
+        npm ci
+        npm run build
+
+    # GITHUB_TOKEN raises the changelog fetcher's GitHub API rate limit; the sandbox that installs
+    # candidate versions gets a scrubbed environment and never sees it.
+    - id: run
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        RATCHET_BASE: ${{ inputs.base }}
+        RATCHET_PROJECT_DIR: ${{ inputs.project-dir }}
+        RATCHET_LOCKFILE_NAME: ${{ inputs.lockfile-name }}
+        RATCHET_CONTAINER_IMAGE: ${{ inputs.container-image }}
+        RATCHET_FORMAT: ${{ inputs.format }}
+      run: |
+        report_file="${RUNNER_TEMP}/ratchet-python-report.txt"
+        extra=()
+        if [ -n "${RATCHET_LOCKFILE_NAME}" ]; then extra+=(--lockfile-name "${RATCHET_LOCKFILE_NAME}"); fi
+        if [ -n "${RATCHET_CONTAINER_IMAGE}" ]; then extra+=(--container "${RATCHET_CONTAINER_IMAGE}"); fi
+        set +e
+        node .ratchet-python-tool/dist-python/python-module/cli.js \
+          --project "${RATCHET_PROJECT_DIR}" --base "${RATCHET_BASE}" --format "${RATCHET_FORMAT}" "${extra[@]}" \
+          > "${report_file}"
+        code=$?
+        set -e
+        echo "exit-code=${code}" >> "$GITHUB_OUTPUT"
+        echo "report-file=${report_file}" >> "$GITHUB_OUTPUT"
+        if [ "${RATCHET_FORMAT}" = "json" ] && [ -s "${report_file}" ]; then
+          echo "verdict=$(node -p "JSON.parse(require('fs').readFileSync('${report_file}','utf8')).overall")" >> "$GITHUB_OUTPUT"
+        fi
+
+    - if: inputs.format == 'sarif' && steps.run.outputs.exit-code != '2'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ steps.run.outputs.report-file }}
+        category: ratchet-python
+
+    # Exit codes from ratchet-python: 0 ok, 1 overall verdict is broken, 2 usage/runtime error.
+    - if: steps.run.outputs.exit-code != '0'
+      shell: bash
+      env:
+        CODE: ${{ steps.run.outputs.exit-code }}
+        VERDICT: ${{ steps.run.outputs.verdict }}
+      run: |
+        echo "::error title=ratchet-python::verdict '${VERDICT:-unknown}' (exit code ${CODE})"
+        exit "${CODE}"

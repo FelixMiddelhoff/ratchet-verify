@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runPythonCli } from "../../python-module/cli.js";
+import { withTempProject } from "../helpers.js";
 
 function fakeIo(): { out: string[]; err: string[]; io: { out(t: string): void; err(t: string): void } } {
   const out: string[] = [];
@@ -51,9 +52,17 @@ test("neither --old-lockfile nor --base -> usage error", async () => {
 });
 
 test("--format rejects an unknown value", async () => {
-  const { io } = fakeIo();
+  const { err, io } = fakeIo();
+  const code = await runPythonCli(["--project", ".", "--old-lockfile", "a", "--new-lockfile", "b", "--format", "yaml"], io);
+  assert.equal(code, 2);
+  assert.ok(err[0]!.startsWith("usage:"));
+});
+
+test("--format accepts sarif (fails later on an unreadable path, not a parse rejection)", async () => {
+  const { err, io } = fakeIo();
   const code = await runPythonCli(["--project", ".", "--old-lockfile", "a", "--new-lockfile", "b", "--format", "sarif"], io);
   assert.equal(code, 2);
+  assert.ok(err[0]!.startsWith("ratchet:"));
 });
 
 test("--base with an unreadable ref -> reported error, exit code 2 (readFileAtRef reused from src/cli/git.ts)", async () => {
@@ -61,4 +70,23 @@ test("--base with an unreadable ref -> reported error, exit code 2 (readFileAtRe
   const code = await runPythonCli(["--project", ".", "--base", "not-a-real-ref-xyz", "--new-lockfile", "/does/not/exist/uv.lock"], io);
   assert.equal(code, 2);
   assert.ok(err[0]!.startsWith("ratchet:"));
+});
+
+test(".ratchetrc.python's lockfileName is used when --lockfile-name is not given (project's uv.lock read, not poetry.lock)", async () => {
+  await withTempProject({ ".ratchetrc.python": JSON.stringify({ lockfileName: "poetry.lock" }) }, async (dir) => {
+    const { err, io } = fakeIo();
+    const code = await runPythonCli(["--project", dir, "--old-lockfile", "/does/not/exist", "--new-lockfile", "/does/not/exist/poetry.lock"], io);
+    assert.equal(code, 2);
+    assert.ok(err[0]!.startsWith("ratchet:"));
+    assert.ok(err[0]!.includes("poetry.lock") || err[0]!.includes("ENOENT"));
+  });
+});
+
+test("a --lockfile-name flag overrides .ratchetrc.python's lockfileName", async () => {
+  await withTempProject({ ".ratchetrc.python": JSON.stringify({ lockfileName: "poetry.lock" }) }, async (dir) => {
+    const { io } = fakeIo();
+    // --lockfile-name uv.lock should win, so a requirements.txt-shaped new-lockfile path plus the flag is still accepted at the parse level.
+    const code = await runPythonCli(["--project", dir, "--old-lockfile", "/does/not/exist", "--new-lockfile", "/does/not/exist/uv.lock", "--lockfile-name", "uv.lock"], io);
+    assert.equal(code, 2); // unreadable path, but got past argument parsing with the override in effect
+  });
 });

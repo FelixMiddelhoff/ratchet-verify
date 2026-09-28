@@ -3,15 +3,27 @@
 Tracks issue #15. All 7 phases below are done (v1). This file starts as the phase-1 design
 lock (posted as a comment on #15) and now doubles as the module's docs.
 
-## Usage (v1)
+## Usage
+
+Direct from source (no build needed):
 
 ```
 node --experimental-strip-types python-module/cli.ts \
   --project /path/to/python/project \
   (--old-lockfile /path/to/old/uv.lock | --base main) \
   [--new-lockfile /path/to/new/uv.lock] \
-  [--lockfile-name uv.lock|poetry.lock|requirements.txt] [--container <image>] [--format text|json] [--test pytest -x]
+  [--lockfile-name uv.lock|poetry.lock|requirements.txt] [--container <image>] [--format text|json|sarif] [--test pytest -x]
 ```
+
+Or built: `npm run build` compiles `python-module/` into `dist-python/` (via
+`tsconfig.build.python.json`, a second `tsc` pass alongside the npm core's own `dist` build)
+and the `package.json` `bin` entry runs it as `ratchet-python` once installed — this module
+still isn't published to npm as its own release yet, but the build/bin wiring is real and
+runnable locally (`npm link`, or `node dist-python/python-module/cli.js` directly). The
+`dist-python/` build also contains its own nested copy of the compiled npm core
+(`dist-python/src/...`), since `python-module/*.ts` imports it by relative path and there is
+no bundler in this project (deliberately: no external build-tool dependency) to flatten that
+away — a documented size tradeoff, not a bug.
 
 `--base <ref>` reads the old lockfile from that git ref instead of a plain file path, reusing
 `readFileAtRef` from `src/cli/git.ts` directly (reading a file at a git ref is a git concept,
@@ -19,7 +31,9 @@ not an npm one). Exactly one of `--old-lockfile`/`--base` is required. `--new-lo
 optional and defaults to `<project>/<lockfile-name>` (the working tree's current lockfile) —
 the common case is "does the working tree's bump still work against the base branch".
 
-`--format json` renders the full `PythonReport` as JSON (`renderPythonJson`) instead of text.
+`--format json`/`--format sarif` render the report as JSON (`renderPythonJson`) or SARIF 2.1.0
+(`renderPythonSarif`, ported from `src/report/sarif.ts` — same rule set, `pyproject.toml` as
+the fallback artifact location instead of `package.json`) instead of text.
 
 `--container <image>` runs installs and tests inside a docker/podman container instead of a
 temp-dir sandbox (stronger isolation: the container only sees the sandbox mount, nothing else
@@ -29,9 +43,28 @@ ships pip but not uv or poetry, and the CLI fails early with that message via
 `ensurePythonManagerInImage` rather than failing per-candidate later. Without `--container`,
 temp-dir isolation is used (env allowlist + redirected home, no filesystem confinement).
 
-Not yet wired: a `bin` entry in `package.json` (this module isn't part of `dist`/`files` yet —
-adding a bin entry needs its own build step, not just a package.json edit, so it stayed out of
-this CLI-polish pass), SARIF output, a config file, and a GitHub Action.
+### Config file
+
+A `.ratchetrc.python` JSON file in the project directory supplies defaults for `lockfileName`,
+`testCommand`, `containerImage`, `maxInstalls`, `testTimeoutMs`, `installTimeoutMs` and
+`format` (`config.ts`, mirroring `src/config.ts`'s validation style — unknown keys are errors,
+every field is validated — at python-module's much smaller option set: no registry-proxy
+settings exist here, those are npm-registry-specific). CLI flags always override the config
+file, which overrides the built-in defaults.
+
+### GitHub Action
+
+`.github/actions/ratchet-python/action.yml` checks out `FelixMiddelhoff/ratchet-verify` at a
+pinned ref (`ratchet-ref` input, default `main`) into a scratch directory, builds it there
+(`npm ci && npm run build`), then runs `dist-python/python-module/cli.js` against the calling
+repo's project directory — this module isn't published to npm yet, so there is no `npx
+ratchet-python@version` shortcut the way the npm core's own action has (`.github/actions/
+ratchet/action.yml`); this is the honest workaround until it is. Inputs: `base`, `project-dir`,
+`lockfile-name`, `container-image`, `format`, `ratchet-ref`, `node-version`. Outputs: `verdict`
+(only populated for `format: json` — `text`/`sarif` output isn't parsed for it, a documented
+gap) and `report-file`. SARIF is uploaded to code scanning automatically when `format: sarif`.
+No PR-comment posting yet (the npm core's action has one; porting `renderPythonText`'s output
+into a comment is a natural next increment, not done here).
 
 ## Why a separate module
 
@@ -91,10 +124,10 @@ existing Node CLI and reusing `src/report/` and `src/bisect/` shapes where the c
   this dev box (image pull + a command run through the container); not yet covered by a
   dedicated CI job the way the npm core's container tests run on `ubuntu-latest`.
 
-- **CLI polish (partly done)**: `--base` git-ref reading and `--format json` are done (this
-  pass). Still open: SARIF output, a config file, a GitHub Action, and a `package.json` `bin`
-  entry (needs its own build step — this module currently isn't compiled into `dist` or
-  listed in `package.json`'s `files`, so it isn't published to npm at all yet).
+- **CLI polish (done)**: `--base` git-ref reading, `--format json`/`--format sarif`, a
+  `.ratchetrc.python` config file, a `package.json` `bin` entry with its own build step
+  (`tsconfig.build.python.json` -> `dist-python/`), and a GitHub Action
+  (`.github/actions/ratchet-python/`). See the Usage section above for details on each.
 - **`requirements.txt` support (done)**: `lockfile.ts`'s `parsePythonLock` auto-detects the
   format (TOML `[[package]]` vs. no such marker) and parses hash-pinned pip-compile output
   (`name==version` plus `--hash=...`/`# via ...` continuation lines; `\`-line-continuations
@@ -113,13 +146,18 @@ existing Node CLI and reusing `src/report/` and `src/bisect/` shapes where the c
   using it would have been a guess about intent rather than reading an explicit signal.
   `options.testCommand` still overrides detection entirely, in both `testrun.ts` and `real.ts`.
 
-## Known v1/v2 gaps (open follow-ups, not started)
+## Known gaps (open follow-ups, not started)
 
-All five original v2 items (matcher, container mode, CLI polish, `requirements.txt`, test
-command auto-detection) are done or partly done (see above). What's left, none started:
+All five original v2 items, and the CLI-polish leftovers (SARIF, config file, bin entry/build
+step, GitHub Action), are done. What's left:
 
-- `package.json` `bin` entry + the build step it needs (this module still isn't part of
-  `dist`/`files`, so it isn't published to npm).
-- SARIF output.
-- A config file (mirroring `.ratchetrc`).
-- A GitHub Action for this module.
+- This module is not published to npm as its own release — the build/bin wiring is real and
+  works locally, but there's no `npx ratchet-python` yet. The GitHub Action works around this
+  by checking out and building the source directly.
+- The Action doesn't post a PR comment (the npm core's action does) and only parses `verdict`
+  from `format: json` output.
+- No container-mode dedicated CI job (verified manually against real podman on the dev box
+  instead — see the v2 progress entry above).
+- No breaking-change matcher coverage beyond `from-import` symbol names and whole-module
+  `import pkg` flags (no subpath/default-export equivalents, since Python's import shape
+  doesn't have JS's forwarding/re-export patterns that motivated those).

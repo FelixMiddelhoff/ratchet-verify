@@ -2,18 +2,20 @@
 /**
  * v1 CLI (phase 7 of #15) + v2 CLI polish: `--base <ref>` reads the old lockfile from a git
  * ref via `readFileAtRef` (src/cli/git.ts, reused directly — reading a file at a git ref is a
- * git concept, not an npm one), `--format json` adds a JSON renderer alongside the text one.
- * Still not wired: a `package.json` `bin` entry (this module isn't part of `dist`/`files` yet,
- * so publishing it needs its own build step first), a config file, and a GitHub Action.
+ * git concept, not an npm one), `--format json|sarif` add renderers alongside text, a
+ * `.ratchetrc.python` config file (config.ts) supplies defaults CLI flags override, and a
+ * `bin` entry (package.json, built via tsconfig.build.python.json into dist-python/) makes
+ * this installable as `ratchet-python`.
  */
 import { readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { readFileAtRef } from "../src/cli/git.js";
+import { loadPythonConfig, type PythonConfig, type PythonLockfileName } from "./config.js";
 import { detectRuntime, ensureImage, ensurePythonManagerInImage, type PythonContainerSettings } from "./container.js";
 import { runPythonPipeline } from "./pipeline.js";
 import { realPythonDeps } from "./real.js";
-import { renderPythonJson, renderPythonText } from "./render.js";
+import { renderPythonJson, renderPythonSarif, renderPythonText } from "./render.js";
 import type { PythonReport } from "./report.js";
 
 export interface PythonCliIo {
@@ -22,24 +24,33 @@ export interface PythonCliIo {
 }
 
 export const USAGE =
-  "usage: ratchet-python --project <dir> (--old-lockfile <path> | --base <git-ref>) [--new-lockfile <path>] [--lockfile-name uv.lock|poetry.lock|requirements.txt] [--container <image>] [--format text|json] [--test <cmd...>]";
+  "usage: ratchet-python --project <dir> (--old-lockfile <path> | --base <git-ref>) [--new-lockfile <path>] [--lockfile-name uv.lock|poetry.lock|requirements.txt] [--container <image>] [--format text|json|sarif] [--test <cmd...>]";
 
 export async function runPythonCli(argv: string[], io: PythonCliIo): Promise<number> {
-  const args = parseArgs(argv);
-  if (!args) {
+  const parsed = parseArgs(argv);
+  if (!parsed) {
     io.err(USAGE);
     return 2;
   }
   try {
-    const newLockfilePath = args.newLockfile ?? join(args.project, args.lockfileName);
+    const config = await loadPythonConfig(parsed.project);
+    const args = resolveArgs(parsed, config);
+    const newLockfilePath = args.newLockfile ?? join(parsed.project, args.lockfileName);
     const [oldLockfileText, newLockfileText] = await Promise.all([
-      args.base ? readFileAtRef(args.project, args.base, args.lockfileName) : readFile(args.oldLockfile!, "utf8"),
+      parsed.base ? readFileAtRef(parsed.project, parsed.base, args.lockfileName) : readFile(parsed.oldLockfile!, "utf8"),
       readFile(newLockfilePath, "utf8"),
     ]);
     const container = await resolveContainer(args.containerImage, args.lockfileName);
-    const deps = realPythonDeps({ projectDir: args.project, lockfileName: args.lockfileName, testCommand: args.testCommand, container });
-    const report = await runPythonPipeline({ oldLockfileText, newLockfileText }, deps);
-    io.out(args.format === "json" ? renderPythonJson(report) : renderPythonText(report));
+    const deps = realPythonDeps({
+      projectDir: parsed.project,
+      lockfileName: args.lockfileName,
+      testCommand: args.testCommand,
+      container,
+      testTimeoutMs: config.testTimeoutMs,
+      installTimeoutMs: config.installTimeoutMs,
+    });
+    const report = await runPythonPipeline({ oldLockfileText, newLockfileText, maxInstalls: config.maxInstalls }, deps);
+    io.out(render(args.format, report));
     return exitCode(report);
   } catch (error) {
     io.err(`ratchet: ${(error as Error).message}`);
@@ -47,9 +58,33 @@ export async function runPythonCli(argv: string[], io: PythonCliIo): Promise<num
   }
 }
 
-type LockfileName = "uv.lock" | "poetry.lock" | "requirements.txt";
+function render(format: PythonConfig["format"], report: PythonReport): string {
+  if (format === "json") return renderPythonJson(report);
+  if (format === "sarif") return renderPythonSarif(report);
+  return renderPythonText(report);
+}
 
-async function resolveContainer(image: string | undefined, lockfileName: LockfileName): Promise<PythonContainerSettings | undefined> {
+interface ResolvedArgs {
+  newLockfile?: string;
+  lockfileName: PythonLockfileName;
+  testCommand?: string[];
+  containerImage?: string;
+  format: PythonConfig["format"];
+}
+
+/** CLI flags win; a `.ratchetrc.python` value is next; the built-in default is last. */
+function resolveArgs(parsed: ParsedArgs, config: PythonConfig): ResolvedArgs {
+  const lockfileName = parsed.lockfileName ?? config.lockfileName ?? guessLockfileName(parsed.newLockfile ?? parsed.oldLockfile ?? "");
+  return {
+    newLockfile: parsed.newLockfile,
+    lockfileName,
+    testCommand: parsed.testCommand ?? config.testCommand,
+    containerImage: parsed.containerImage ?? config.containerImage,
+    format: parsed.format ?? config.format,
+  };
+}
+
+async function resolveContainer(image: string | undefined, lockfileName: PythonLockfileName): Promise<PythonContainerSettings | undefined> {
   if (!image) return undefined;
   const engine = await detectRuntime("auto");
   if (!engine) throw new Error("--container was given but no docker or podman engine was found");
@@ -59,7 +94,7 @@ async function resolveContainer(image: string | undefined, lockfileName: Lockfil
   return settings;
 }
 
-function managerFor(lockfileName: LockfileName): "uv" | "poetry" | "pip" {
+function managerFor(lockfileName: PythonLockfileName): "uv" | "poetry" | "pip" {
   if (lockfileName === "poetry.lock") return "poetry";
   if (lockfileName === "requirements.txt") return "pip";
   return "uv";
@@ -70,10 +105,10 @@ interface ParsedArgs {
   oldLockfile?: string;
   base?: string;
   newLockfile?: string;
-  lockfileName: LockfileName;
+  lockfileName?: PythonLockfileName;
   testCommand?: string[];
   containerImage?: string;
-  format: "text" | "json";
+  format?: "text" | "json" | "sarif";
 }
 
 function parseArgs(argv: string[]): ParsedArgs | undefined {
@@ -81,10 +116,10 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   let oldLockfile: string | undefined;
   let base: string | undefined;
   let newLockfile: string | undefined;
-  let lockfileName: LockfileName | undefined;
+  let lockfileName: PythonLockfileName | undefined;
   let testCommand: string[] | undefined;
   let containerImage: string | undefined;
-  let format: "text" | "json" = "text";
+  let format: "text" | "json" | "sarif" | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--project") project = argv[++i];
@@ -94,7 +129,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     else if (arg === "--container") containerImage = argv[++i];
     else if (arg === "--format") {
       const v = argv[++i];
-      if (v !== "text" && v !== "json") return undefined;
+      if (v !== "text" && v !== "json" && v !== "sarif") return undefined;
       format = v;
     } else if (arg === "--lockfile-name") {
       const v = argv[++i];
@@ -107,11 +142,10 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   }
   if (!project) return undefined;
   if ((oldLockfile === undefined) === (base === undefined)) return undefined; // exactly one of the two
-  const resolvedLockfileName = lockfileName ?? guessLockfileName(newLockfile ?? oldLockfile ?? "");
-  return { project, oldLockfile, base, newLockfile, lockfileName: resolvedLockfileName, testCommand, containerImage, format };
+  return { project, oldLockfile, base, newLockfile, lockfileName, testCommand, containerImage, format };
 }
 
-function guessLockfileName(path: string): LockfileName {
+function guessLockfileName(path: string): PythonLockfileName {
   if (path.endsWith("poetry.lock")) return "poetry.lock";
   if (path.endsWith("requirements.txt")) return "requirements.txt";
   return "uv.lock";
