@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 /**
- * Phase 7 of #15: minimal v1 CLI. Takes explicit paths to the old and new lockfile files
- * (no `--base` git-ref reading yet, unlike the npm core's CLI) — documented follow-up in
- * python-module/README.md, not v1. Config file, JSON/SARIF output and a GitHub Action are
- * likewise follow-ups; the npm core grew those over several PRs after its own CLI first
- * landed (#11/#12/#13), not all at once.
+ * v1 CLI (phase 7 of #15) + v2 CLI polish: `--base <ref>` reads the old lockfile from a git
+ * ref via `readFileAtRef` (src/cli/git.ts, reused directly — reading a file at a git ref is a
+ * git concept, not an npm one), `--format json` adds a JSON renderer alongside the text one.
+ * Still not wired: a `package.json` `bin` entry (this module isn't part of `dist`/`files` yet,
+ * so publishing it needs its own build step first), a config file, and a GitHub Action.
  */
 import { readFile, realpath } from "node:fs/promises";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { readFileAtRef } from "../src/cli/git.js";
 import { detectRuntime, ensureImage, ensurePythonManagerInImage, type PythonContainerSettings } from "./container.js";
 import { runPythonPipeline } from "./pipeline.js";
 import { realPythonDeps } from "./real.js";
-import { renderPythonText } from "./render.js";
+import { renderPythonJson, renderPythonText } from "./render.js";
 import type { PythonReport } from "./report.js";
 
 export interface PythonCliIo {
@@ -20,7 +22,7 @@ export interface PythonCliIo {
 }
 
 export const USAGE =
-  "usage: ratchet-python --project <dir> --old-lockfile <path> --new-lockfile <path> [--lockfile-name uv.lock|poetry.lock] [--container <image>] [--test <cmd...>]";
+  "usage: ratchet-python --project <dir> (--old-lockfile <path> | --base <git-ref>) [--new-lockfile <path>] [--lockfile-name uv.lock|poetry.lock] [--container <image>] [--format text|json] [--test <cmd...>]";
 
 export async function runPythonCli(argv: string[], io: PythonCliIo): Promise<number> {
   const args = parseArgs(argv);
@@ -29,11 +31,15 @@ export async function runPythonCli(argv: string[], io: PythonCliIo): Promise<num
     return 2;
   }
   try {
-    const [oldLockfileText, newLockfileText] = await Promise.all([readFile(args.oldLockfile, "utf8"), readFile(args.newLockfile, "utf8")]);
+    const newLockfilePath = args.newLockfile ?? join(args.project, args.lockfileName);
+    const [oldLockfileText, newLockfileText] = await Promise.all([
+      args.base ? readFileAtRef(args.project, args.base, args.lockfileName) : readFile(args.oldLockfile!, "utf8"),
+      readFile(newLockfilePath, "utf8"),
+    ]);
     const container = await resolveContainer(args.containerImage, args.lockfileName);
     const deps = realPythonDeps({ projectDir: args.project, lockfileName: args.lockfileName, testCommand: args.testCommand, container });
     const report = await runPythonPipeline({ oldLockfileText, newLockfileText }, deps);
-    io.out(renderPythonText(report));
+    io.out(args.format === "json" ? renderPythonJson(report) : renderPythonText(report));
     return exitCode(report);
   } catch (error) {
     io.err(`ratchet: ${(error as Error).message}`);
@@ -53,27 +59,36 @@ async function resolveContainer(image: string | undefined, lockfileName: "uv.loc
 
 interface ParsedArgs {
   project: string;
-  oldLockfile: string;
-  newLockfile: string;
+  oldLockfile?: string;
+  base?: string;
+  newLockfile?: string;
   lockfileName: "uv.lock" | "poetry.lock";
   testCommand?: string[];
   containerImage?: string;
+  format: "text" | "json";
 }
 
 function parseArgs(argv: string[]): ParsedArgs | undefined {
   let project: string | undefined;
   let oldLockfile: string | undefined;
+  let base: string | undefined;
   let newLockfile: string | undefined;
   let lockfileName: "uv.lock" | "poetry.lock" | undefined;
   let testCommand: string[] | undefined;
   let containerImage: string | undefined;
+  let format: "text" | "json" = "text";
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--project") project = argv[++i];
     else if (arg === "--old-lockfile") oldLockfile = argv[++i];
+    else if (arg === "--base") base = argv[++i];
     else if (arg === "--new-lockfile") newLockfile = argv[++i];
     else if (arg === "--container") containerImage = argv[++i];
-    else if (arg === "--lockfile-name") {
+    else if (arg === "--format") {
+      const v = argv[++i];
+      if (v !== "text" && v !== "json") return undefined;
+      format = v;
+    } else if (arg === "--lockfile-name") {
       const v = argv[++i];
       if (v !== "uv.lock" && v !== "poetry.lock") return undefined;
       lockfileName = v;
@@ -82,8 +97,10 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
       break;
     } else return undefined;
   }
-  if (!project || !oldLockfile || !newLockfile) return undefined;
-  return { project, oldLockfile, newLockfile, lockfileName: lockfileName ?? guessLockfileName(newLockfile), testCommand, containerImage };
+  if (!project) return undefined;
+  if ((oldLockfile === undefined) === (base === undefined)) return undefined; // exactly one of the two
+  const resolvedLockfileName = lockfileName ?? guessLockfileName(newLockfile ?? oldLockfile ?? "");
+  return { project, oldLockfile, base, newLockfile, lockfileName: resolvedLockfileName, testCommand, containerImage, format };
 }
 
 function guessLockfileName(path: string): "uv.lock" | "poetry.lock" {

@@ -8,10 +8,18 @@ lock (posted as a comment on #15) and now doubles as the module's docs.
 ```
 node --experimental-strip-types python-module/cli.ts \
   --project /path/to/python/project \
-  --old-lockfile /path/to/old/uv.lock \
-  --new-lockfile /path/to/new/uv.lock \
-  [--lockfile-name uv.lock|poetry.lock] [--container <image>] [--test pytest -x]
+  (--old-lockfile /path/to/old/uv.lock | --base main) \
+  [--new-lockfile /path/to/new/uv.lock] \
+  [--lockfile-name uv.lock|poetry.lock] [--container <image>] [--format text|json] [--test pytest -x]
 ```
+
+`--base <ref>` reads the old lockfile from that git ref instead of a plain file path, reusing
+`readFileAtRef` from `src/cli/git.ts` directly (reading a file at a git ref is a git concept,
+not an npm one). Exactly one of `--old-lockfile`/`--base` is required. `--new-lockfile` is
+optional and defaults to `<project>/<lockfile-name>` (the working tree's current lockfile) —
+the common case is "does the working tree's bump still work against the base branch".
+
+`--format json` renders the full `PythonReport` as JSON (`renderPythonJson`) instead of text.
 
 `--container <image>` runs installs and tests inside a docker/podman container instead of a
 temp-dir sandbox (stronger isolation: the container only sees the sandbox mount, nothing else
@@ -20,11 +28,9 @@ of the host). The image must ship `uv` or `poetry` (whichever the lockfile needs
 `ensurePythonManagerInImage` rather than failing per-candidate later. Without `--container`,
 temp-dir isolation is used (env allowlist + redirected home, no filesystem confinement).
 
-Not yet wired: a `bin` entry in `package.json` (so it isn't installed as `ratchet-python` by
-npm yet), `--base` git-ref reading (lockfile paths are plain files for now, not read from a
-git ref the way the npm core reads `--base`), JSON/SARIF output (`renderPythonText` is the
-only renderer), a config file, and a GitHub Action. The npm core grew these over several PRs
-after its own CLI first landed (#11/#12/#13), not all at once — same expected path here.
+Not yet wired: a `bin` entry in `package.json` (this module isn't part of `dist`/`files` yet —
+adding a bin entry needs its own build step, not just a package.json edit, so it stayed out of
+this CLI-polish pass), SARIF output, a config file, and a GitHub Action.
 
 ## Why a separate module
 
@@ -85,10 +91,13 @@ existing Node CLI and reusing `src/report/` and `src/bisect/` shapes where the c
   this dev box (image pull + a command run through the container); not yet covered by a
   dedicated CI job the way the npm core's container tests run on `ubuntu-latest`.
 
+- **CLI polish (partly done)**: `--base` git-ref reading and `--format json` are done (this
+  pass). Still open: SARIF output, a config file, a GitHub Action, and a `package.json` `bin`
+  entry (needs its own build step — this module currently isn't compiled into `dist` or
+  listed in `package.json`'s `files`, so it isn't published to npm at all yet).
+
 ## Known v1/v2 gaps (open follow-ups, not started)
 
-- **CLI is minimal**: explicit lockfile file paths, not `--base` git-ref reading; text output
-  only, no JSON/SARIF; no config file; no GitHub Action; no `package.json` `bin` entry.
 - **`requirements.txt` unsupported**: deferred to v2 per the original scope lock.
 - **Single test command assumption**: `installAndTestPython`/`real.ts` default to `pytest`
   with no auto-detection (Python has no `scripts.test` equivalent to read).

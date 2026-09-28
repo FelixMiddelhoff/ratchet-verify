@@ -27,3 +27,30 @@ test("--lockfile-name rejects an unknown value", async () => {
   const code = await runPythonCli(["--project", ".", "--old-lockfile", "a", "--new-lockfile", "b", "--lockfile-name", "requirements.txt"], io);
   assert.equal(code, 2);
 });
+
+test("--old-lockfile and --base together -> usage error (exactly one allowed)", async () => {
+  const { err, io } = fakeIo();
+  const code = await runPythonCli(["--project", ".", "--old-lockfile", "a", "--base", "main", "--new-lockfile", "b"], io);
+  assert.equal(code, 2);
+  assert.ok(err[0]!.startsWith("usage:"));
+});
+
+test("neither --old-lockfile nor --base -> usage error", async () => {
+  const { err, io } = fakeIo();
+  const code = await runPythonCli(["--project", ".", "--new-lockfile", "b"], io);
+  assert.equal(code, 2);
+  assert.ok(err[0]!.startsWith("usage:"));
+});
+
+test("--format rejects an unknown value", async () => {
+  const { io } = fakeIo();
+  const code = await runPythonCli(["--project", ".", "--old-lockfile", "a", "--new-lockfile", "b", "--format", "sarif"], io);
+  assert.equal(code, 2);
+});
+
+test("--base with an unreadable ref -> reported error, exit code 2 (readFileAtRef reused from src/cli/git.ts)", async () => {
+  const { err, io } = fakeIo();
+  const code = await runPythonCli(["--project", ".", "--base", "not-a-real-ref-xyz", "--new-lockfile", "/does/not/exist/uv.lock"], io);
+  assert.equal(code, 2);
+  assert.ok(err[0]!.startsWith("ratchet:"));
+});
