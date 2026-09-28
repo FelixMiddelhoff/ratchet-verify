@@ -12,6 +12,7 @@ reading, container-engine detection, changelog markdown classification — and h
 version of anything that isn't (lockfile parsing, PEP 440 version ordering, environment
 variables for pip/uv/poetry).
 
+**Two-minute worked example with real output:** [docs/tutorial-python.md](../docs/tutorial-python.md).
 **Full usage guide, CLI reference, config file and GitHub Action docs:**
 [docs/python-module.md](../docs/python-module.md).
 

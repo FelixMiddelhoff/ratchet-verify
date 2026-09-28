@@ -1,7 +1,7 @@
 {
   "name": "ratchet-verify",
   "version": "0.9.0",
-  "description": "Verify a dependency bump before you merge it: real tests, changelog breaking changes vs. actual usage, bisection to the breaking version.",
+  "description": "Verify a dependency bump before you merge it, for npm/yarn/pnpm and Python (uv/poetry/pip): real tests, changelog breaking changes vs. actual usage, bisection to the breaking version.",
   "license": "MIT",
   "repository": {
     "type": "git",

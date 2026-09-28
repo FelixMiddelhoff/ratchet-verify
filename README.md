@@ -4,6 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/ratchet-verify?logo=npm)](https://www.npmjs.com/package/ratchet-verify)
 [![CI](https://github.com/FelixMiddelhoff/ratchet-verify/actions/workflows/ci.yml/badge.svg)](https://github.com/FelixMiddelhoff/ratchet-verify/actions/workflows/ci.yml)
 [![node](https://img.shields.io/node/v/ratchet-verify?logo=nodedotjs)](https://nodejs.org)
+[![python](https://img.shields.io/badge/python-uv%20%7C%20poetry%20%7C%20pip-3776ab?logo=python&logoColor=white)](docs/python-module.md)
 [![license: MIT](https://img.shields.io/npm/l/ratchet-verify)](LICENSE)
 [![runtime dependencies: 1](https://img.shields.io/badge/runtime%20dependencies-1-brightgreen)](package.json)
 [![help wanted](https://img.shields.io/github/issues/FelixMiddelhoff/ratchet-verify/help%20wanted?label=help%20wanted&color=blue)](https://github.com/FelixMiddelhoff/ratchet-verify/labels/help%20wanted)
@@ -19,7 +20,15 @@ don't check whether the release notes' breaking changes touch code you
 actually have, and don't tell you which of five transitive bumps in a
 lockfile diff broke CI.
 
-**ratchet** does. Given the lockfile before and after a bump, it
+**ratchet** does, for both **npm** (npm/yarn/pnpm lockfiles, via the
+`ratchet`/`ratchet-verify` command below) and **Python** (`uv.lock`,
+`poetry.lock`, hash-pinned `requirements.txt`, via a separate `ratchet-python`
+command — see [docs/python-module.md](docs/python-module.md) and the
+[Python quickstart](docs/tutorial-python.md)). Both share the same bisection
+approach and the same safe/risky/broken verdict model; each ecosystem's
+checker is otherwise a separate module with its own scope and limitations —
+see that module's own docs for what it does and doesn't cover yet. Given the
+lockfile before and after a bump, it
 
 1. installs the new lockfile in a sandbox and runs your **real test suite**,
 2. reads the changelog for every version in between and checks its **breaking
@@ -54,7 +63,7 @@ RISKY  commander 8.3.0 -> 9.0.0 (direct)
 [Verdicts](#verdicts-at-a-glance) · [Command line](#command-line) ·
 [GitHub Action](#github-action) · [Safety of the install step](#safety-of-the-install-step) ·
 [Limitations](#limitations) · [FAQ](#faq) · [Help wanted](#help-wanted) ·
-[Development](#development)
+[Development](#development) · [Python module](docs/python-module.md)
 
 ## Quick start
 
@@ -73,6 +82,11 @@ ratchet-verify . --base main         # the short alias `ratchet` works too
 with the one on `main`. Exit code `0` means ok, `1` means a verdict at or above
 `--fail-on` (default `broken`), `2` means a usage or runtime error.
 
+Verifying a Python dependency instead? Same package, a different bin:
+`npx --package ratchet-verify@latest ratchet-python --project . --base main`.
+Two-minute worked example: [docs/tutorial-python.md](docs/tutorial-python.md);
+full CLI/config/Action reference: [docs/python-module.md](docs/python-module.md).
+
 More in [docs/](docs/README.md): a [setup guide](docs/setup.md) (zero to a protected
 repository, step by step), a [two-minute demo and tutorial](docs/tutorial.md)
 with real output, a [private-registry tutorial](docs/tutorial-private-registries.md), what every [verdict and caveat means](docs/verdicts.md),
@@ -81,6 +95,11 @@ the [configuration reference](docs/configuration.md), the
 [report formats](docs/report-format.md) and [troubleshooting](docs/troubleshooting.md).
 
 ## How it works
+
+The npm core's pipeline (the Python module follows the same shape — lockfile
+diff, changelog vs. usage, sandboxed test, bisect on failure — with its own
+lockfile parser, PEP 440 version ordering and PyPI changelog fetch; see
+[docs/python-module.md](docs/python-module.md)):
 
 ```
 package.json + old/new package-lock.json

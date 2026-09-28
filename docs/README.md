@@ -3,7 +3,8 @@
 | If you want to… | Read |
 |---|---|
 | Set ratchet up from zero, step by step (isolation, CI, required check, monorepos) | [setup.md](setup.md) |
-| Try ratchet in two minutes and see every kind of verdict | [tutorial.md](tutorial.md) |
+| Try ratchet in two minutes and see every kind of verdict (npm/yarn/pnpm) | [tutorial.md](tutorial.md) |
+| Try ratchet on a Python project in two minutes | [tutorial-python.md](tutorial-python.md) |
 | Know exactly what safe / risky / broken and each caveat mean | [verdicts.md](verdicts.md) |
 | Run it in CI, on Dependabot or Renovate pull requests | [ci.md](ci.md) |
 | Tune it with `.ratchetrc` | [configuration.md](configuration.md) |
