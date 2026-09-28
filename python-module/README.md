@@ -104,8 +104,22 @@ existing Node CLI and reusing `src/report/` and `src/bisect/` shapes where the c
   give); the test command runs directly with no wrapper subcommand (`uv run`/`poetry run`
   have no pip equivalent). Environment markers (`; python_version < "3.9"`) are stripped, not
   evaluated — v1/v2 has no per-environment resolution concept.
+- **Test command auto-detection (done)**: `detectPythonTestCommand` (`testrun.ts`) checks a
+  short list of real, unambiguous conventions before the `["pytest"]` default: `pytest.ini`,
+  a `[tool.pytest.ini_options]`/`[tool:pytest]`/`[pytest]` section in `pyproject.toml`/
+  `setup.cfg`/`tox.ini`, and a Django `manage.py` (-> `python manage.py test`). No guessing
+  beyond names pytest/Django themselves define — e.g. `tool.poetry.scripts` was considered
+  and rejected: it defines console-script entry points, not a test-runner convention, so
+  using it would have been a guess about intent rather than reading an explicit signal.
+  `options.testCommand` still overrides detection entirely, in both `testrun.ts` and `real.ts`.
 
 ## Known v1/v2 gaps (open follow-ups, not started)
 
-- **Single test command assumption**: `installAndTestPython`/`real.ts` default to `pytest`
-  with no auto-detection (Python has no `scripts.test` equivalent to read).
+All five original v2 items (matcher, container mode, CLI polish, `requirements.txt`, test
+command auto-detection) are done or partly done (see above). What's left, none started:
+
+- `package.json` `bin` entry + the build step it needs (this module still isn't part of
+  `dist`/`files`, so it isn't published to npm).
+- SARIF output.
+- A config file (mirroring `.ratchetrc`).
+- A GitHub Action for this module.
