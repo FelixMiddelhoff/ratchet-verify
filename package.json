@@ -1,6 +1,6 @@
 {
   "name": "ratchet-verify",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Verify a dependency bump before you merge it: real tests, changelog breaking changes vs. actual usage, bisection to the breaking version.",
   "license": "MIT",
   "repository": {
@@ -60,7 +60,11 @@
     "changelog",
     "breaking-changes",
     "lockfile",
-    "upgrade"
+    "upgrade",
+    "python",
+    "uv",
+    "poetry",
+    "pip"
   ],
   "publishConfig": {
     "access": "public"
