@@ -192,10 +192,12 @@ was used:
   uses a container when an engine is available. The test phase runs in its
   own container with no network (`--network none`), so tests cannot send data
   out; `--network open` restores the network for suites that need it. The
-  install phase still has full network access (install scripts run there and
-  no per-host allowlist exists), so a malicious install script can still
-  exfiltrate what it can see, which in a container is only the sandbox.
-  `temp-dir` restricts nothing.
+  install phase still has full network access by default (install scripts run
+  there and no per-host allowlist exists), so a malicious install script can
+  still exfiltrate what it can see, which in a container is only the sandbox.
+  `--network proxy` closes that: it confines the install phase to the npm
+  registry through the same proxy `--registry-auth` uses, with no credentials
+  and no custom registry (#23). `temp-dir` restricts nothing.
 - **`container` + `--registry-auth` (opt-in): private registries without
   handing over your token.** The credential lives only in a small proxy
   container; the sandbox runs on an internal network whose only reachable peer
@@ -223,8 +225,10 @@ machines either way. Details: [docs/configuration.md](docs/configuration.md#isol
 
 - **Install-phase network is open by default.** In container mode tests run
   offline, but install scripts can reach any host (only the sandbox is
-  readable to them). With `--registry-auth` the install phase is confined to
-  the registry proxy instead (see above).
+  readable to them). With `--registry-auth` or `--network proxy` the install
+  phase is confined to the registry proxy instead (see above); opt-in, not the
+  default, since the first-run friction (proxy overhead, postinstall scripts
+  needing hosts you have not allowlisted yet) would hurt adoption.
 - **Tests-based.** ratchet proves "your tests still pass and no cited
   breaking change hits your code". It does *not* prove a version isn't
   malicious: behaviour-preserving malice (the event-stream and ua-parser-js
@@ -337,9 +341,6 @@ duplicate effort; small fixes can go straight to a pull request.
 
 ### High impact
 
-- **Registry-only egress for the install phase.** Tests already run offline in
-  container mode; installs still have the whole network. An allowlisting proxy
-  (issue #23 follow-up) would close that.
 - **Per-workspace test scripts.** Workspaces are understood (see
   Limitations) but only the root `scripts.test` runs; running each declaring
   workspace's own script needs a verified per-manager form.

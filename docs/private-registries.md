@@ -101,6 +101,30 @@ supported. ratchet reads the project `.yarnrc.yml` (yarn berry: `npmRegistryServ
 (`NPM_CONFIG_USERCONFIG` or `~/.npmrc`); earlier in that list wins. Registry URLs
 must be `https`.
 
+## Network-only mode (`--network proxy`)
+
+`#23`: when you don't need a private registry at all and just want the install
+phase confined to the real npm registry (no arbitrary egress an install script
+could use), pass `--network proxy` instead of `--registry-auth`:
+
+```sh
+ratchet-verify --base origin/main --isolation container --network proxy
+```
+
+This runs the same proxy machinery, but **never reads `.npmrc`/`.yarnrc.yml`
+and never sources a credential**: the only registry configured is the public
+npm registry (`registry.npmjs.org`), so there is nothing to redirect and
+nothing for the proxy to authenticate with. It is pure network restriction,
+not registry redirection. The test phase still runs with `--network none`,
+same as the default `tests-offline` mode. Use `registryAllowHosts` /
+`registryConnectHosts` if the install also needs a CDN or a binary download
+host (esbuild, sharp) beyond the registry itself.
+
+Combine it with `--registry-auth` (or set both `registryAuth: true` and
+`"containerNetwork": "proxy"` in `.ratchetrc`) when you need a private
+registry AND want the same restriction applied to it; in that case `.npmrc` /
+`.yarnrc.yml` ARE read, same as plain `--registry-auth`.
+
 ### Mutual TLS (client certificates)
 
 A registry that demands a client certificate works the same way as a token: the proxy holds it, the sandbox never does.

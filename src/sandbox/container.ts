@@ -3,12 +3,17 @@ import { packageManagerHomes } from "./env.js";
 import { runCommand, type RunOptions, type RunResult } from "./exec.js";
 
 export type ContainerRuntime = "docker" | "podman";
-export type ContainerNetwork = "tests-offline" | "open";
+export type ContainerNetwork = "tests-offline" | "open" | "proxy";
 
 export interface ContainerSettings {
   runtime: ContainerRuntime;
   image: string;
-  /** "tests-offline" (default): the test phase runs with `--network none`; "open" keeps the network everywhere. */
+  /**
+   * "tests-offline" (default): the test phase runs with `--network none`; "open" keeps the network everywhere;
+   * "proxy": the test phase also runs with `--network none` (same as tests-offline), and the install phase is
+   * confined to the registry proxy (`src/pipeline/registry-proxy.ts` drives that; this field only decides the
+   * test phase's offline-ness here).
+   */
   network?: ContainerNetwork;
   /** Rootless engines map the container's root to the invoking user, so no `--user` is wanted. */
   rootless: boolean;
@@ -186,7 +191,7 @@ export async function runInContainer(
   phase: { offline?: boolean; /** Internal network to attach to for a phase that needs the registry proxy. */ network?: string } = {},
 ): Promise<RunResult> {
   const name = `ratchet-${randomBytes(6).toString("hex")}`;
-  const offline = phase.offline === true && (settings.network ?? "tests-offline") === "tests-offline";
+  const offline = phase.offline === true && (settings.network ?? "tests-offline") !== "open";
   const runArgs = buildRunArgs({ settings, root, name, command, args, user: hostUser(settings), offline, network: offline ? undefined : phase.network });
   const result = await exec({ command: settings.runtime, args: runArgs, cwd: process.cwd(), env: hostEnv(), timeoutMs });
   if (result.timedOut) await probe(settings.runtime, ["kill", name], exec).catch(() => undefined);

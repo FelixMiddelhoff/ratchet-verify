@@ -16,7 +16,7 @@ export interface CliArgs {
   format: OutputFormat;
   failOn?: "broken" | "risky";
   isolation?: "temp-dir" | "container" | "auto";
-  network?: "tests-offline" | "open";
+  network?: "tests-offline" | "open" | "proxy";
   /** Opt in to the registry proxy (private registries); `false` only when the flag was not given. */
   registryAuth?: boolean;
   /** `--no-registry-allowlist`: turn the package-name allowlist off (reported). */
@@ -41,7 +41,7 @@ Usage: ratchet [project-dir] (--base <git-ref> | --old <lockfile>) [options]
   --markdown          Markdown output, as posted in pull request comments
   --report-dir <dir>  also write report.json, report.md and report.sarif into <dir>
   --isolation <mode>  temp-dir (default), container (docker/podman) or auto
-  --network <mode>    container mode: tests-offline (default, tests get no network) or open
+  --network <mode>    container mode: tests-offline (default, tests get no network), open, or proxy (install phase restricted to the npm registry through the registry proxy; needs --isolation container)
   --registry-auth     container mode: install through a proxy that holds the registry credentials from .npmrc (they never enter the sandbox)
   --no-registry-allowlist  with --registry-auth: also let the proxy serve package names that are not in the lockfiles (reported)
   --fail-on <level>  exit 1 when the overall verdict is "broken" (default) or "risky"
@@ -92,8 +92,8 @@ export function parseCliArgs(argv: string[]): CliArgs {
   }
 
   const network = values.network;
-  if (network !== undefined && network !== "tests-offline" && network !== "open") {
-    throw new Error(`--network must be "tests-offline" or "open", got "${network}"`);
+  if (network !== undefined && network !== "tests-offline" && network !== "open" && network !== "proxy") {
+    throw new Error(`--network must be "tests-offline", "open" or "proxy", got "${network}"`);
   }
 
   if (values["no-registry-allowlist"] && !values["registry-auth"]) throw new Error("--no-registry-allowlist only makes sense together with --registry-auth");

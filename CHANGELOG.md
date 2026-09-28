@@ -3,6 +3,16 @@
 All notable changes to this project are documented here, in
 [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [Unreleased]
+
+### Added
+- `--network proxy` (#23): a third `containerNetwork` mode alongside `tests-offline`/`open`. It runs the install
+  phase through the same registry proxy `--registry-auth` uses, but confined to the public npm registry only — no
+  `.npmrc`/`.yarnrc.yml` reading, no credentials, no registry redirection, just egress restriction. The test phase
+  still runs with `--network none`, same as the default. Needs `--isolation container`. Combine with
+  `--registry-auth` to get both a private registry and the same restriction applied to it. See
+  [docs/private-registries.md](docs/private-registries.md#network-only-mode-network-proxy).
+
 ## [0.9.0] - 2026-09-28
 
 ### Added
