@@ -1,7 +1,26 @@
-# ratchet-verify: Python ecosystem module (design, phase 1)
+# ratchet-verify: Python ecosystem module
 
-Tracks issue #15. This is a design lock, not code yet — posted as a comment on #15 before
-any implementation starts.
+Tracks issue #15. All 7 phases below are done (v1). This file starts as the phase-1 design
+lock (posted as a comment on #15) and now doubles as the module's docs.
+
+## Usage (v1)
+
+```
+node --experimental-strip-types python-module/cli.ts \
+  --project /path/to/python/project \
+  --old-lockfile /path/to/old/uv.lock \
+  --new-lockfile /path/to/new/uv.lock \
+  [--lockfile-name uv.lock|poetry.lock] [--test pytest -x]
+```
+
+Not yet wired: a `bin` entry in `package.json` (so it isn't installed as `ratchet-python` by
+npm yet), `--base` git-ref reading (lockfile paths are plain files for now, not read from a
+git ref the way the npm core reads `--base`), JSON/SARIF output (`renderPythonText` is the
+only renderer), a config file, and a GitHub Action. The npm core grew these over several PRs
+after its own CLI first landed (#11/#12/#13), not all at once — same expected path here.
+
+Container mode (isolation stronger than the current temp-dir sandbox) is also a follow-up,
+tracked in the phase 5 note below.
 
 ## Why a separate module
 
@@ -30,16 +49,26 @@ existing Node CLI and reusing `src/report/` and `src/bisect/` shapes where the c
 - **Bisection**: `pip install pkg==<version>` (or `uv pip install`) per candidate version,
   same bisect-loop shape as the npm core, different install command.
 
-## Phases (own issue + PR each, do not start without explicit go-ahead)
+## Phases
 
-1. This design lock (comment on #15, this file).
-2. Lockfile diff: `uv.lock` + `poetry.lock` parsing and diffing.
-3. Changelog fetch: PyPI JSON API + GitHub `project_urls` follow-through.
-4. Static usage scan: `ast`-based driver script, subprocess bridge from TypeScript.
-5. Sandboxed install + test run: Python container image, reusing `src/sandbox/`.
-6. Bisection: `pip`/`uv` version-by-version bisect loop.
-7. Report/CLI wiring + docs.
+1. **Done** — design lock (comment on #15, this file). PR #62.
+2. **Done** — lockfile diff: `uv.lock` + `poetry.lock` parsing and diffing (`lockfile.ts`). PR #63.
+3. **Done** — changelog fetch: PyPI JSON API + GitHub `project_urls` follow-through (`changelog.ts`, `version.ts`). PR #64.
+4. **Done** — static usage scan: `ast`-based inline driver, subprocess bridge from TypeScript (`usage.ts`). Not yet wired into the pipeline (no breaking-change matcher in v1 — see below). PR #65.
+5. **Done** — sandboxed install + test run (`sandbox.ts`, `testrun.ts`). **v1 is temp-dir isolation only**, not container mode: the npm core shipped temp-dir first too, before container mode (#1) followed later as its own PR. Container mode for Python is an open follow-up, not v1. PR #66.
+6. **Done** — bisection: PEP 440 version-by-version bisect loop (`bisect.ts`), duplicated from `src/bisect/` rather than imported because the core hard-codes semver comparison. PR #67.
+7. **Done** — report/CLI wiring (`report.ts`, `pipeline.ts`, `real.ts`, `render.ts`, `cli.ts`) + this docs update.
 
-Effort estimate: ~6-10 sessions total (matches the size estimate given on #15), the biggest
-open unknown being real-world lockfile edge cases (private indexes, extras, markers) found
-once phase 2 starts.
+## Known v1 gaps (open follow-ups, not started)
+
+- **No breaking-change matcher**: `usage.ts` (phase 4) is not wired into the pipeline. The
+  verdict is tests + bisection only — no call-site-vs-changelog cross-reference like the npm
+  core's `src/match/`. Adding it means porting `matchBreakingChanges` at the same reduced
+  scope (no workspaces) once real-world usage on this module shows it's worth it.
+- **No container mode**: sandboxing is temp-dir only (env allowlist + redirected home), not
+  the stronger per-run container isolation the npm core added later.
+- **CLI is minimal**: explicit lockfile file paths, not `--base` git-ref reading; text output
+  only, no JSON/SARIF; no config file; no GitHub Action; no `package.json` `bin` entry.
+- **`requirements.txt` unsupported**: deferred to v2 per the original scope lock.
+- **Single test command assumption**: `installAndTestPython`/`real.ts` default to `pytest`
+  with no auto-detection (Python has no `scripts.test` equivalent to read).

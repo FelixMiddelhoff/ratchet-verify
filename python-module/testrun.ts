@@ -27,6 +27,8 @@ export type PythonTestOutcome =
   | { status: "install-failed"; result: RunResult }
   /** The suite already fails on the old lockfile, so a failure on the new one proves nothing about the bump. */
   | { status: "baseline-failing"; result: RunResult }
+  /** The suite fails, but other dependencies reproduce it on their own; this one was not tested alone. */
+  | { status: "blamed-elsewhere"; culprits: string[] }
   | { status: "no-manager" };
 
 export interface PythonTestRunOptions {
